@@ -1,0 +1,478 @@
+# Format checks enforced on CI:
+# 1. Comments must appear above each field.
+# 2. There must be a blank line between each field.
+# 3. Inline comments (after a field on the same line) are not allowed.
+# 4. Indentation level is respected for nested fields.
+
+# specify the default per-component configs
+defaults:
+
+  # <folder_name>@<field_name>.<field_name>: <yaml_file_name>
+  # actor_rollout_ref.actor: trainer/config/actor/dp_actor.yaml
+  - actor@actor_rollout_ref.actor: dp_actor
+
+  # data: trainer/config/data/legacy_data.yaml
+  - data@data: legacy_data
+
+  # Reference model config.
+  # Reference model will be enabled when actor.use_kl_loss or/and algorithm.use_kl_in_reward is/are True.
+  - ref@actor_rollout_ref.ref: dp_ref
+
+  # Rollout model config.
+  - rollout@actor_rollout_ref.rollout: rollout
+
+  # Critic model config.
+  - critic@critic: dp_critic
+
+  # Reward model config.
+  - reward_model@reward_model: dp_reward_model
+
+  # load the reference default config, then apply the fields in the current yaml
+  # self config override anything above
+  - _self_
+
+# config for actor, rollout and reference model
+actor_rollout_ref:
+
+  # Whether it's a hybrid engine, currently only supports hybrid engine
+  hybrid_engine: true
+
+  # Timeout for operations executed against the process group
+  nccl_timeout: 600
+
+  # common configs for the model
+  model:
+
+    # Huggingface model path. This can be either local path or HDFS path.
+    path: ~/models/deepseek-llm-7b-chat
+
+    # Custom chat template for the model.
+    custom_chat_template: null
+
+    # Whether to use shared memory (SHM) for accelerating the loading of model weights
+    use_shm: false
+
+    # Additional Python packages to register huggingface models/tokenizers.
+    external_lib: null
+
+    # Used to override model's original configurations, mainly dropout
+    override_config: {}
+
+    # Enable gradient checkpointing for actor
+    enable_gradient_checkpointing: true
+
+    # Enable activation offloading for actor
+    enable_activation_offload: false
+
+    # Whether to remove padding tokens in inputs during training
+    use_remove_padding: false
+
+    # Set to positive value to enable LoRA (e.g., 32)
+    lora_rank: 0
+
+    # LoRA scaling factor
+    lora_alpha: 16
+
+    # Target modules to apply LoRA. Options: "all-linear" (not recommended for VLMs) or
+    # [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
+    target_modules: all-linear
+
+    # Exclude modules from applying Lora. Similar usage to target_modules and Peft.
+    # Example: '.*visual.*' for excluding the ViT in Qwen2.5-VL, as currently vllm does not support ViT Lora.
+    exclude_modules: null
+
+    # Whether to use Liger for linear layer fusion
+    use_liger: false
+
+    # Whether to use custom fused kernels (e.g., FlashAttention, fused MLP)
+    use_fused_kernels: false
+
+    # Options for fused kernels. If use_fused_kernels is true, this will be used.
+    fused_kernel_options:
+
+      # Implementation backend for fused kernels. Options: "triton" or "torch".
+      impl_backend: torch
+
+    # Whether to enable loading a remote code model
+    trust_remote_code: false
+
+  # Environment configuration shared by rollout workers.
+  env:
+
+    # Root directory exposed to environment-aware tools (e.g., file search).
+    root_dir: null
+
+  # Rollout model config.
+  rollout:
+
+    # may get higher throughput when set to True. When activated, Please increase max_num_batched_tokens or decrease max_model_len.
+    enable_chunked_prefill: True
+
+    # Which loader to use for rollout model weights: dummy_dtensor, hf, megatron, etc.
+    # safetensors (for huge model, and set use_shm=True); dummy_dtensor: randomly init model weight
+    load_format: dummy_dtensor
+
+    # for huge model, layered summon can save memory (prevent OOM) but make it slower
+    layered_summon: False
+
+# custom reward function definition
+custom_reward_function:
+
+  # The path to the file containing your customized reward function.
+  # If not specified, pre-implemented reward functions will be used.
+  path: null
+
+  # The name of the reward function within the specified file. Default is 'compute_score'.
+  name: compute_score
+
+# config for the algorithm
+algorithm:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl_patch.trainer.code.config.AlgoConfig
+
+  # Discount factor for future rewards
+  gamma: 1.0
+
+  # Trade-off between bias and variance in the GAE estimator
+  lam: 1.0
+
+  # Advantage estimator type: "gae", "grpo", "reinforce_plus_plus", "rloo", "remax", "optimal_baseline", "optimal_baseline_step"
+  adv_estimator: gae
+
+  # Whether to normalize advantages by std (specific to GRPO)
+  norm_adv_by_std_in_grpo: True
+
+  # Whether to enable in-reward KL penalty
+  use_kl_in_reward: False
+
+  # How to estimate KL divergence: "kl", "abs", "mse", "low_var_kl", or "full"
+  kl_penalty: kl
+
+  # KL control configuration
+  kl_ctrl:
+
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl_patch.trainer.code.config.KLControlConfig
+
+    # KL control type: "fixed" or "adaptive"
+    type: fixed
+
+    # Initial coefficient for KL penalty
+    kl_coef: 0.001
+
+    # Horizon value for adaptive controller (if enabled)
+    horizon: 10000
+
+    # Target KL divergence (used for adaptive controller)
+    target_kl: 0.1
+
+  # Whether to enable preference feedback PPO
+  use_pf_ppo: False
+
+  # Preference feedback PPO settings
+  pf_ppo:
+
+    # Method for reweighting samples: "pow", "max_min", or "max_random"
+    reweight_method: pow
+
+    # Power used for weight scaling in "pow" method
+    weight_pow: 2.0
+
+  batch_std: False  # Enable intelligent batch standardization (sequence vs token level)
+                    # Automatically detects GRPO/RLOO (sequence-level) vs GAE (token-level)
+
+  # Advantage estimation configuration
+  adv_by_last_turn: True  # Only use the last turn's data for advantage calculation
+  use_final_reward: True  # Restrict reward assignment to the last turn (ignore intermediate rewards)
+
+  # Multi-prompt MVU (work with ALL advantage estimators)
+  use_multi_prompt_mvu: False    # Multi-prompt Minimum Variance Unbiased (MVU) weighting
+                                 # Theory: Optimal combination of estimates from different prompts
+                                 # Weight formula: w_k = (1/σ_k²)/Σ_j(1/σ_j²)
+                                 # Effect: Higher weight to lower-variance prompt groups
+                                 # Works with: gae, grpo, rloo, optimal_baseline, etc.
+
+  # Rollout Correction (replaces legacy tis_imp_ratio_cap)
+  rollout_is: null # "token", "turn", "sequence", or "null" (disabled)
+  rollout_is_kwargs: {'upper': 2.0} # upper: float
+  rollout_rs: null # "token", "turn", "turn_geo", "sequence", "geometric", or "null" (disabled)
+  rollout_rs_kwargs: {'lower': 0.5, 'upper': 2.0} # lower: float, upper: float
+  rollout_token_veto_threshold: null # float, per-token veto threshold (null = disabled)
+
+  # Rollout Correction Mode Selection (New)
+  # Skip old_log_prob recomputation by using rollout_log_prob directly
+  bypass_old_logprob_for_rollout: false
+
+  # Use pure policy gradient with IS correction instead of PPO clipping
+  # Requires bypass_old_logprob_for_rollout=true
+  # Higher variance but no clipping constraints
+  use_pure_rollout_correction: false
+
+  # Optimal baseline configuration
+  optimal_baseline_kwargs: {'uniform_weight':False, 'uniform_cumulative':False, 'rollout_correction':False}
+    # uniform_weight:          # True: Use w=1 instead of variance proxy (removes length bias)
+    # uniform_cumulative:      # True: Skip sum/cumsum of variance proxy (tests if weighting matters beyond length)
+    # rollout_correction:      # True: Enable rollout correction for score_norm
+
+# config for the trainer
+trainer:
+
+  # Whether to balance batch sizes across distributed workers
+  balance_batch: False
+
+  # Number of epochs in training
+  total_epochs: 30
+
+  # Total training steps (can be set explicitly or derived from epochs)
+  total_training_steps: null
+
+  # Project name for experiment tracking (e.g., wandb)
+  project_name: verl_examples
+
+  # Experiment name for run identification in tracking tools
+  experiment_name: gsm8k
+
+  # Logging backends to use: "console", "wandb", etc.
+  logger: [ 'console', 'wandb' ]
+
+  # Number of generations to log during validation
+  log_val_generations: 0
+
+  # Directory for logging rollout data; no dump if null
+  rollout_data_dir: null
+
+  # Directory for logging validation data; no dump if null
+  validation_data_dir: null
+
+  # Number of nodes used in the training
+  nnodes: 1
+
+  # Number of GPUs per node
+  n_gpus_per_node: 8
+
+  # Save frequency (by iteration) for model checkpoints
+  save_freq: -1
+
+  # ESI refers to the elastic server instance used during training, similar to the training plan. For example,
+  # if you purchase 10 hours of computing power, the ESI will automatically shut down after 10 hours of training.
+  # To ensure a checkpoint is saved before ESI shuts down, the system will start saving a checkpoint in advance.
+  # The advance time is calculated as: Advance Time = Longest historical step duration + Checkpoint save duration + esi_redundant_time.
+  # Here, esi_redundant_time is a user-defined value that further extends the advance time for added safety.
+  esi_redundant_time: 0
+
+  # Resume mode: "auto", "disable", or "resume_path"
+  # "auto": resume from last checkpoint if available
+  # "disable": start from scratch
+  # "resume_path": resume from a user-defined path
+  resume_mode: auto
+
+  # Path to resume training from (only used when resume_mode is "resume_path")
+  resume_from_path: null
+
+  # Whether to run validation before training begins
+  val_before_train: True
+
+  # Whether to run validation only
+  val_only: False
+
+  # Validation frequency (in training iterations)
+  test_freq: -1
+
+  # Number of iterations to warm up the critic before updating policy
+  critic_warmup: 0
+
+  # Default path to distributed filesystem for saving checkpoints
+  default_hdfs_dir: null
+
+  # Whether to delete local checkpoints after loading
+  del_local_ckpt_after_load: False
+
+  # Default local directory for saving checkpoints
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+
+  # Maximum number of actor checkpoints to keep
+  max_actor_ckpt_to_keep: null
+
+  # Maximum number of critic checkpoints to keep
+  max_critic_ckpt_to_keep: null
+
+  # Timeout (in seconds) for Ray worker to wait for registration
+  ray_wait_register_center_timeout: 300
+
+  # Device to run training on (e.g., "cuda", "cpu")
+  device: cuda
+
+  # whether to use legacy worker implementation
+  #  mode: "auto", "enable", or "disable"
+  use_legacy_worker_impl: auto
+
+  rejection_sample: True # if True, skip batch if samples < expected size (default: True to maintain training quality)
+  # IMPORTANT: rejection_sample controls batch skipping behavior
+  # - True (recommended): Skip batches with insufficient samples after filtering
+  #   This maintains training quality but requires proper oversampling factors
+  # - False: Repeat samples to reach batch size when insufficient
+  #   This can harm PPO training (violates IID, biases gradients) but prevents skipping
+  # Note: With the skip batch fix, filter stats are only updated for trained batches
+  remove_clip: False # remove overlong response if True
+
+  # Automatic oversampling configuration
+  automatic_oversampling_skip_steps: 0
+
+  # Early stopping configuration
+  early_stopping:
+    # Validation-based early stopping
+    val_metric: null  # Metric to monitor for validation early stopping (e.g., "val_solve_rate")
+    val_patience: 0   # Number of epochs to wait before stopping (0 = disabled)
+    val_mode: max     # "max" for metrics to maximize, "min" for metrics to minimize
+
+    # Training-based early stopping
+    train_metric: null       # Metric to monitor for training early stopping (e.g., "train_solve_rate")
+    train_threshold: 0.3     # Threshold value that triggers early stopping
+    train_window: 10         # Window size for computing moving average
+    train_patience: 1        # Number of consecutive windows below threshold before stopping
+
+# Two-Gate Rejection Filter Configuration
+# Addresses systematic inference-training mismatch between vLLM (BFloat16) and FSDP (FP32)
+# Based on "Rejection Sampling is All You Need for Systematic Inference-Training Mismatch"
+rejection_sampling:
+  enable_two_gate_filter: false  # Enable the two-gate filtering system (disabled by default)
+
+  # Gate 1: Systematic Bias Check
+  # Detects sequences with excessive accumulated bias from BFloat16 precision loss
+  gate1:
+    enabled: true
+    bias_epsilon: 0.01  # Maximum tolerable average log-prob difference per token (1% tolerance)
+                        # Lower values = stricter filtering (typical: 0.005-0.02)
+
+  # Gate 2: Logit-Difference Instability Check
+  # Detects tokens sampled from numerically unstable or statistically implausible distributions
+  # Threshold = max(hardware_limit, vocab_aware_threshold)
+  gate2:
+    enabled: true
+    instability_threshold: -15.0  # Default: max of hardware and vocab-aware thresholds
+
+    # Hardware limits (precision-based):
+    # - FP16: -9.7 (ln(2^-14), hardware underflow at 6.1e-5)
+    # - BFloat16: -87.3 (ln(2^-126), but mantissa limited to ~-20 practical)
+
+    # Vocab-aware thresholds (reject tokens k× below uniform):
+    # For k=100 (reject tokens 100× less likely than uniform):
+    # - 32k vocab: -15.0 (uniform at -10.4)
+    # - 50k vocab: -15.4 (uniform at -10.8)
+    # - 155k vocab (Qwen): -16.6 (uniform at -11.95)
+
+    # Recommended settings:
+    # - Use -15.0: Balanced (rejects ~100× below uniform for most vocabs)
+    # - Use -20.0: Very conservative (only extreme outliers)
+    # - Use max(-15.0, ln(1/(100*vocab_size))): Dynamic vocab-aware
+
+  # Logging and debugging options
+  log_rejected_samples: false  # Log details of rejected samples (verbose)
+  save_rejection_stats: true   # Track rejection statistics for monitoring
+
+  # Note: FP32 LM head is configured in actor_rollout_ref.rollout section above
+  # Expected rejection rate: 5-15% when enabled
+  # Metrics logged as filter/* (e.g., filter/acceptance_rate, filter/gate1_rejection_rate)
+
+# profiler configs
+global_profiler:
+
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl.utils.profiler.ProfilerConfig
+
+  # Profiling tool: choose between nsys, npu, torch, torch_memory
+  tool: null
+
+  # profile steps
+  steps: null
+
+  # Whether to combine continuous steps into one database.
+  ## If True, worker.profiler.discrete must be False, [1,2] in one, [5] in another.
+  ## If False, [1] in one, [2] in another, [5] in another.
+  profile_continuous_steps: False
+
+  # Path to save profiling contents
+  save_path: "outputs/profile"
+
+  # Specific tool configs, can use +profiler.tool_config.[tool].xxx to config
+  global_tool_config:
+
+    # nsys config
+    nsys:
+
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl.utils.profiler.config.NsightToolConfig
+
+      # True for each task has its own database, False for all tasks in one training step share one database.
+      discrete: False
+
+      # controller Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      ## reference https://docs.nvidia.com/nsight-systems/UserGuide/index.html
+      ## reference https://docs.ray.io/en/latest/ray-observability/user-guides/profiling.html
+      controller_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+      # worker Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      worker_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+        # Profiling only in a range of torch.cuda.profiler.start and stop. Do not change this config.
+        capture-range: "cudaProfilerApi"
+
+        # Specify the desired behavior when a capture range ends.
+        # In verl we need the torch.cuda.profiler.start/stop pair to repeats n times.
+        # valid values are "repeat-shutdown:n" or null.
+        # For normal whole step profiling, n = len(profile_steps);
+        # but for discrete profiling, n = len(profile_steps) * Number(subtasks).
+        # Or you can just leave it null and the program will use n = len(profile_steps) * 6;
+        capture-range-end: null
+
+        # Send signal to the target application's process group. We let the program to exit by itself.
+        kill: none
+
+    # enable memory visualization for debugging memory usage
+    torch_memory:
+
+      #  Maximum number of allocation entries to record
+      trace_alloc_max_entries: 100_000
+
+      # The depth of the call stack to capture for each allocation
+      stack_depth: 32
+
+      # 'alloc': records only allocation events || 'state': records memory state changes || 'all': records both.
+      context: "all"
+
+      # 'python': records Python stacks || 'cpp': records C++ stacks (available in some versions) || 'all': records both.
+      stacks: "all"
+
+      # devices, record_context etc.
+      kw_args: {}
+
+# configs related to ray
+ray_kwargs:
+
+  # configs related to ray initialization
+  ray_init:
+
+    # Number of CPUs for Ray. Use a fixed number instead of null when using SLURM.
+    num_cpus: null
+
+  # Path to save Ray timeline JSON for performance profiling
+  timeline_json_file: null

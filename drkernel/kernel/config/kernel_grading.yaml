@@ -1,0 +1,368 @@
+# Kernel Grading Configuration
+# Standalone configuration for evaluating kernel code generation models
+# Does NOT inherit from training configs to avoid conflicts
+
+hydra:
+  searchpath:
+    - file://verl_patch/trainer/code/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# Data configuration
+
+gradio: False
+gradio_share: True
+visualize_only: False
+
+data:
+  # Input dataset path (parquet file with prompts)
+  path: /path/to/your/kernel_prompts.parquet
+
+  # Output paths
+  output_path: /path/to/output/graded_results.parquet
+  raw_response_path: null  # Optional: /path/to/output/raw_responses.jsonl
+  dataproto_path: null     # Optional: /path/to/output/dataproto (for caching)
+  metrics_output_path: null # Optional: /path/to/output/metrics.json
+
+  # Generation parameters
+  n_samples: 4              # Number of samples per prompt
+  batch_size: 8             # Batch size for generation
+  do_sample: true           # Enable sampling
+
+  # Evaluation thresholds
+  solve_threshold: 0.99     # Score >= threshold = solved
+  pass_at_k: 1              # Pass@k metric
+
+  # Data keys
+  prompt_key: prompt
+  reward_fn_key: null
+  data_source_key: data_source
+  reward_model_key: reward_model
+
+  # Length limits
+  max_prompt_length: 20480
+  max_response_length: 8192
+
+  # Chat template
+  apply_chat_template: true
+  filter_overlong_prompts: true
+  trust_remote_code: false
+
+# Model configuration
+model:
+  path: ~/models/your-kernel-model
+  custom_chat_template: null
+  use_shm: false
+  external_lib: null
+  override_config: {}
+  trust_remote_code: false
+
+# Actor/Rollout/Reference configuration
+actor_rollout_ref:
+  # Hybrid engine (required)
+  hybrid_engine: true
+  nccl_timeout: 600
+
+  # Model settings
+  model:
+    path: ~/models/your-kernel-model
+    custom_chat_template: null
+    use_shm: false
+    external_lib: null
+    override_config: {}
+    enable_gradient_checkpointing: false
+    enable_activation_offload: false
+    use_remove_padding: false
+    lora_rank: 0
+    lora_alpha: 16
+    target_modules: all-linear
+    exclude_modules: null
+    use_liger: false
+    use_fused_kernels: false
+    fused_kernel_options:
+      impl_backend: torch
+    trust_remote_code: false
+
+  # Actor configuration (required even for evaluation)
+  actor:
+    strategy: fsdp
+
+    # FSDP configuration
+    fsdp_config:
+      fsdp_size: 1
+      param_offload: false
+      optimizer_offload: false
+      grad_offload: false
+
+    # Optimizer (not used in grading but required by config)
+    optim:
+      lr: 1e-6
+
+    # PPO parameters (not used in grading)
+    ppo_mini_batch_size: 32
+    ppo_max_token_len_per_gpu: 8192
+    use_dynamic_bsz: false
+
+    # Loss parameters (not used in grading)
+    use_kl_loss: false
+    kl_loss_coef: 0.0
+    kl_loss_type: kl
+    entropy_coeff: 0.0
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.2
+    entropy_clip_rate: 0.0
+    loss_agg_mode: seq-mean-token-sum
+    loss_scale_factor: 1.0
+    grad_clip: 1.0
+
+    # Sequence parallel
+    ulysses_sequence_parallel_size: 1
+
+  # Rollout configuration
+  rollout:
+    # Rollout mode: "sync", "async_vllm", or "async_agent"
+    mode: async_vllm
+    # vLLM settings
+    name: vllm
+    backend: vllm # [vllm, openai]
+    gpu_memory_utilization: 0.9
+    tensor_model_parallel_size: 1
+    enforce_eager: false
+    free_cache_engine: true
+    enable_chunked_prefill: true
+
+    # Generation parameters
+    temperature: 1.0
+    top_p: 0.95
+    top_k: -1
+    min_p: 0.0
+    prompt_length: ${data.max_prompt_length}
+    response_length: ${data.max_response_length}
+    stop_token_ids: [872,77091,151645,151644]
+
+    # Batching
+    max_num_batched_tokens: 6144
+
+    # Model loading
+    load_format: dummy_dtensor
+    layered_summon: false
+
+    # Log prob calculation
+    calculate_log_probs: false
+    log_prob_max_token_len_per_gpu: 32768
+
+    openai:
+      model: null
+      thinking_mode: false
+      # Optional overrides if you don’t want env vars
+      api_key: null
+      base_url: null
+      timeout: 120
+      max_retries: 3
+      max_concurrency: 8
+
+    multi_turn:
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl_patch.workers.config.rollout.MultiTurnConfig
+
+      # set to True for multi-turn tool interaction tasks
+      enable: True
+
+      # null for no limit (default max_length // 3)
+      max_assistant_turns: null
+
+      # null for no tool
+      tool_config_path: null
+
+      # Maximum number of turns for multi-turn training
+      max_user_turns: 3
+
+      # max parallel call for tools in single turn
+      max_parallel_calls: 1
+
+      # max length of tool response (kernel feedback can be long with profiling info)
+      max_tool_response_length: 2048
+
+      # truncate side of tool response: left, middle, right
+      tool_response_truncate_side: middle
+
+      # null for no interaction
+      interaction_config_path: null
+
+      # - When set to True, the model's default chat template is used for multi-turn rollout, which typically matches production behavior.
+      # - When set to False, the token ids recorded for training are used instead; unlike the default chat template, these always include the model's full output,
+      #   which may contain additional content such as reasoning content. This maintains the consistency between training and rollout, but it will lead to longer prompts.
+      use_inference_chat_template: False
+
+      # Tokenization is performed turn by turn and the resulting token ids are concatenated to form the full conversation.
+      # To ensure this matches the result of tokenizing the entire conversation at once, a sanity check is run at the end of each multi-turn rollout to compare the two sets of token ids.
+      # Some models are known to produce different tokenization results when tokenizing turn by turn vs. all at once. aThis behavior has already been validated for them.
+      # To reduce excessive warnings, you can turn off the sanity check for these models if you are using their default chat template:
+      # Qwen/QwQ-32B, Qwen/Qwen3-xxB
+      # - disable: disable tokenization sanity check
+      # - strict: enable strict tokenization sanity check (default)
+      # - ignore_strippable: ignore strippable tokens when checking tokenization sanity
+      tokenization_sanity_check_mode: strict
+
+      # Format of the multi-turn interaction. Options: hermes, llama3_json, ...
+      format: hermes
+
+      # Agent type for multi-turn training
+      agent_type: "KernelAgent"  # Options: "MathAgent", "CodeAgent", "KernelAgent"
+
+      # Environment type for multi-turn training (not used in kernel, reward_fn is called directly)
+      env_type: "CodeSandboxEnv"  # Placeholder, actual reward is computed via reward_fn
+
+      # Path to save rollout data in JSONL format
+      rollout_save_jsonl: null
+
+      # Path to per-turn prompt config
+      prompt_config_path: kernel/config/prompt_config/multi_turn_kernel.yaml
+
+      # Whether to mask loss for void turns (no tool calls) in multi-turn training
+      mask_void_turn: True
+
+      # Multi-iteration configuration
+      multi_iteration:
+        enable: false                    # Feature flag (default: disabled)
+        max_iterations: 1                # Number of iterations (1 = no iteration)
+        remain_turns: 2                  # Turns to preserve between iterations
+        iteration_method: "last"         # "last" or "best"
+        best_selection_metric: "reward"  # For "best" method: "reward", "performance", "time_coverage", or "time_coverage_reward"
+
+    
+    val_kwargs:
+      stop_token_ids: ${actor_rollout_ref.rollout.stop_token_ids}
+
+  # Reference model configuration (not used in grading but required)
+  ref:
+    strategy: fsdp
+    log_prob_max_token_len_per_gpu: 32768
+    fsdp_config:
+      param_offload: true
+      fsdp_size: 1
+    ulysses_sequence_parallel_size: 1
+
+
+# Critic configuration (not used in grading but may be required by worker init)
+critic:
+  strategy: fsdp
+  ppo_micro_batch_size_per_gpu: 4
+  optim:
+    lr: 1e-6
+  fsdp_config:
+    fsdp_size: 1
+    param_offload: false
+    optimizer_offload: false
+
+# Algorithm configuration (not used in grading but may be checked)
+algorithm:
+  gamma: 1.0
+  lam: 1.0
+  adv_estimator: gae
+  use_kl_in_reward: false
+  kl_penalty: kl
+  kl_ctrl:
+    type: fixed
+    kl_coef: 0.0
+    horizon: 10000
+    target_kl: 0.1
+  batch_std: false
+
+# Reward model configuration (kernel-specific)
+reward_model:
+  # Enable reward model
+  enable: false
+
+  # Reward manager type
+  reward_manager: kernel_async
+
+  # KernelServer URL
+  server_url: "http://[fdbd:dccd:cdd2:2001::22f]:9744"
+
+  # Reward function
+  reward_func_name: "calculate_reward_weighted"
+
+  reference_backend: null
+
+  # Async configuration
+  launch_reward_fn_async: true
+  enhanced: true
+  use_sandbox_rate_limit: true
+  rate_limit: 64
+  acquire_timeout: 2400
+  max_concurrent: 64
+  timeout: 1800
+  max_retries: 3
+  task_timeout: 600
+  task_timeout_in_client: 2400
+  print_status: true
+
+  init_correct_weight: 0.5
+  init_performance_weight: 0.5
+  speedup_eps: 0.01
+  speedup_reward_upper_bound: 3.0
+  speedup_reward_lower_bound: 0.0
+  coverage_reward:
+    reward_type: "time_coverage"
+    enable: false
+    weight: 0.25
+
+  # Performance evaluation
+  num_perf_trials: 100
+  num_correct_trials: 5
+  enable_profiling: true
+  verbose_errors: true
+  detect_decoy_kernel: true
+
+  # Reward weights
+  reward_weights:
+    compilation: 0.3
+    correctness: 0.4
+    performance: 0.3
+
+  # Reward policy (penalties)
+  reward_policy:
+    penalties:
+      penalty_score: 0.0
+      compilation_fail: -0.5
+      correctness_fail: -0.3
+      perf_degrade: -0.1
+
+# Custom reward function
+custom_reward_function:
+  path: kernel/rewards/kernel_reward.py
+  name: compute_kernel_reward_batch
+
+# Trainer configuration
+trainer:
+  # Project naming
+  project_name: kernel-grading
+  experiment_name: kernel_eval
+
+  # Logging
+  logger: [ 'console', 'wandb' ]
+
+  # Cluster configuration
+  nnodes: 1
+  n_gpus_per_node: 1
+
+  # Device
+  device: cuda
+
+  # Ray settings
+  ray_wait_register_center_timeout: 300
+  use_legacy_worker_impl: auto
+
+  # Qwen3 fix
+  fix_qwen3_chat_template: false
+
+  log_val_generations: 10
+
+# Ray configuration
+ray_kwargs:
+  ray_init:
+    num_cpus: null
+  timeline_json_file: null

@@ -1,0 +1,199 @@
+hydra:
+  searchpath:
+    - file://verl_patch/trainer/code/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  gen_batch_size: ${data.train_batch_size}
+  monitor_files: null
+
+# Kernel specific reward model configuration
+reward_model:
+  reward_manager: kernel
+  server_url: "http://[fdbd:dccd:cdd2:2001::19d]:10458"
+  reward_func_name: "calculate_reward_weighted"
+  init_correct_weight: 0.5
+  init_performance_weight: 0.5
+  speedup_eps: 0.01
+  launch_reward_fn_async: true
+  enhanced: true
+  use_sandbox_rate_limit: false   # 启用组合版 Hybrid
+  rate_limit: 64                  # 令牌桶并发上限（全局）
+  acquire_timeout: 2400             # 获取令牌等待超时（秒），超过则放弃提交 240 default
+  max_concurrent: 64              # Ray 执行池 worker 并发（建议 >= rate_limit）
+  print_status: true             # 是否打印每个评测样本的状态
+  speedup_reward_upper_bound: 3.0      # 加速奖励上限
+  speedup_reward_lower_bound: 0.0      # 加速奖励下限
+  reward_policy:
+    penalties:
+      penalty_score: 0.0
+      compilation_fail: -0.5     # 编译失败惩罚
+      correctness_fail: -0.3     # 正确性失败惩罚
+      perf_degrade: -0.1         # speedup < 1.0 的惩罚
+  reward_weights:
+    compilation: 0.3
+    correctness: 0.4
+    performance: 0.3
+  timeout: 1800  # 180 default
+  max_retries: 3
+  task_timeout: 600  # 180 default
+  task_timeout_in_client: 1800  # 180 default
+  num_perf_trials: 100
+  num_correct_trials: 5
+  enable_profiling: true
+  verbose_errors: true
+  coverage_reward:
+    reward_type: "time_coverage"  # time_coverage: cutom_kernel_time_us / total_kernel_time_us, number_coverage: num_custom_kernel / num_total_kernels
+    enable: false
+    weight: 0.25
+  coverage_rs: null
+  coverage_rs_threshold: 0.3
+  coverage_rs_factor: 0.1
+  coverage_rs_key: "time_coverage"
+  speedup_threshold: null
+  detect_decoy_kernel: true
+
+  # 传入 KernelRewardManager 的参数（用于异步 reward_manager 初始化）
+  reward_kwargs:
+    server_url: ${reward_model.server_url}
+    enhanced: ${reward_model.enhanced}
+    use_sandbox_rate_limit: ${reward_model.use_sandbox_rate_limit}
+    rate_limit: ${reward_model.rate_limit}
+    acquire_timeout: ${reward_model.acquire_timeout}
+    max_concurrent: ${reward_model.max_concurrent}
+    timeout: ${reward_model.timeout}
+    max_retries: ${reward_model.max_retries}
+    reward_weights: ${reward_model.reward_weights}
+    reward_policy: ${reward_model.reward_policy}
+    is_valid: false
+    task_timeout: ${reward_model.task_timeout}
+    num_perf_trials: ${reward_model.num_perf_trials}
+    num_correct_trials: ${reward_model.num_correct_trials}
+    enable_profiling: ${reward_model.enable_profiling}
+    verbose_errors: ${reward_model.verbose_errors}
+  # Reference caching configuration
+  reference_cache:
+    enable: false  # Enable reference caching by default
+    auto_generate_uuid: false  # UUID should be provided by data
+    force_refresh: false  # Don't force refresh by default
+
+
+# Custom reward function for kernel evaluation
+custom_reward_function:
+  path: kernel/rewards/kernel_reward.py
+  name: compute_kernel_reward_batch
+
+# Actor rollout reference configuration
+actor_rollout_ref:
+  actor:
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.28
+  rollout:
+    # default stop tokens for multi-turn rollout
+    # stop: ["assistant", "user", "<|im_end|>", "<|im_start|>", "Assistant", "User"]
+    stop_token_ids: [872,77091,151645,151644]
+    val_kwargs:
+      stop_token_ids: ${actor_rollout_ref.rollout.stop_token_ids}
+      max_user_turns: ${actor_rollout_ref.rollout.multi_turn.max_user_turns}
+    # Required for multi-turn rollout to collect logprobs
+    calculate_log_probs: True
+    multi_turn:
+      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      _target_: verl_patch.workers.config.rollout.MultiTurnConfig
+
+      # set to True for multi-turn tool interaction tasks
+      enable: True
+
+      # null for no limit (default max_length // 3)
+      max_assistant_turns: null
+
+      # null for no tool
+      tool_config_path: null
+
+      # Maximum number of turns for multi-turn training
+      max_user_turns: 3
+
+      # Multi-iteration configuration
+      multi_iteration:
+        enable: false                    # Feature flag (default: disabled)
+        max_iterations: 1                # Number of iterations (1 = no iteration)
+        remain_turns: 2                  # Turns to preserve between iterations
+        iteration_method: "last"         # "last" or "best"
+        best_selection_metric: "reward"  # For "best" method: "reward", "performance", "time_coverage", or "time_coverage_reward"
+
+      # max parallel call for tools in single turn
+      max_parallel_calls: 1
+
+      # max length of tool response (kernel feedback can be long with profiling info)
+      max_tool_response_length: 2048
+
+      # truncate side of tool response: left, middle, right
+      tool_response_truncate_side: middle
+
+      # null for no interaction
+      interaction_config_path: null
+
+      # - When set to True, the model's default chat template is used for multi-turn rollout, which typically matches production behavior.
+      # - When set to False, the token ids recorded for training are used instead; unlike the default chat template, these always include the model's full output,
+      #   which may contain additional content such as reasoning content. This maintains the consistency between training and rollout, but it will lead to longer prompts.
+      use_inference_chat_template: False
+
+      # Tokenization is performed turn by turn and the resulting token ids are concatenated to form the full conversation.
+      # To ensure this matches the result of tokenizing the entire conversation at once, a sanity check is run at the end of each multi-turn rollout to compare the two sets of token ids.
+      # Some models are known to produce different tokenization results when tokenizing turn by turn vs. all at once. aThis behavior has already been validated for them.
+      # To reduce excessive warnings, you can turn off the sanity check for these models if you are using their default chat template:
+      # Qwen/QwQ-32B, Qwen/Qwen3-xxB
+      # - disable: disable tokenization sanity check
+      # - strict: enable strict tokenization sanity check (default)
+      # - ignore_strippable: ignore strippable tokens when checking tokenization sanity
+      tokenization_sanity_check_mode: strict
+
+      # Format of the multi-turn interaction. Options: hermes, llama3_json, ...
+      format: hermes
+
+      # Agent type for multi-turn training
+      agent_type: "KernelAgent"  # Options: "MathAgent", "CodeAgent", "KernelAgent"
+
+      # Environment type for multi-turn training (not used in kernel, reward_fn is called directly)
+      env_type: "CodeSandboxEnv"  # Placeholder, actual reward is computed via reward_fn
+
+      # Path to save rollout data in JSONL format
+      rollout_save_jsonl: null
+
+      # Path to per-turn prompt config
+      prompt_config_path: kernel/config/prompt_config/multi_turn_kernel.yaml
+
+      # Whether to mask loss for void turns (no tool calls) in multi-turn training
+      mask_void_turn: True
+
+# Algorithm configuration for multi-turn training
+algorithm:
+  # Discount factor for multi-turn returns (R_t = r_t + gamma * R_{t+1})
+  gamma: 1.0
+
+  # Trade-off between bias and variance in GAE estimator
+  lam: 1.0
+
+  # Advantage estimator for multi-turn training
+  # Options: "grpo" (recommended), "erloo", "erloo_norm", "reinforce", "egae"
+  adv_estimator: grpo
+
+  reward_shaping: False # Whether to shape rewards to residual rewards
+
+  unbiased_shaping: True # Whether to use unbiased shaping, we could add a terminal rewards 0 to keep optimal policy still.
+
+  # Whether to normalize advantages by std (specific to GRPO)
+  norm_adv_by_std_in_grpo: True
+
+  is_get_last_turn: False
+
+# Trainer configuration
+trainer:
+  project_name: kernel-rl-training
+  monitor_freq: 20
+  save_freq: 100
+  max_skip_steps: 10
+  fix_qwen3_chat_template: false

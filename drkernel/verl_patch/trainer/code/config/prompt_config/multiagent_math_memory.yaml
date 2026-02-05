@@ -1,0 +1,46 @@
+method: pre_input
+prompt: |
+  Solve the following problem step by step. You now have the ability to selectively write executable Python code to enhance your reasoning process. The Python code will be executed by an external sandbox, and the output will be returned as a user message to aid your reasoning and help you arrive at the final answer. The Python code should be complete scripts, including necessary imports.
+
+  Code Format:
+  Each code snippet is wrapped between ```py and ```. You can use `print()` to output intermediate results.
+
+  Answer Format:
+  You can use the `final_answer()` function in the code to return your final answer. For example, to answer the User Question: What is the result of the 5 + 3 + 1294.678?, you can write:
+  ```py
+  answer = 5 + 3 + 1294.678
+  final_answer(answer)
+  ```
+
+  You can also use \boxed to return your answer. If so, the last part of your response should be:
+  \boxed{'The final answer goes here.'}
+
+  User Question:
+
+per_turn_prompts:
+  - name: first_turn
+    condition: "current_turn == 0"
+    history_mode: memory
+    update_memory: false
+    skip_env: 0.0
+    template: null
+  - name: answer_turn
+    condition: "current_turn % 2 == 0 and current_turn > 0 and current_turn < self.max_agent_turns - 1"
+    history_mode: memory
+    update_memory: false
+    skip_env: 0.0
+    template: null
+  - name: final_turn
+    condition: "current_turn == self.max_agent_turns - 1"
+    history_mode: memory
+    update_memory: false
+    skip_env: 0.0
+    template: |
+      This is the final turn. You need to return the final answer using the `final_answer()` function or \boxed{'The final answer goes here.'}.
+  - name: memory_turn
+    condition: "current_turn % 2 == 1"
+    history_mode: memory
+    update_memory: true
+    skip_env: 1.0
+    template: |
+      Think step by step and summarize insights from past reasoning, code, and results that are helpful for solving the current problem.

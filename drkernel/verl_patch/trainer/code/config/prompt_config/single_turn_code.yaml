@@ -1,0 +1,5 @@
+method: pre_input
+prompt: |
+  To solve the given question (problem specification), you should generate a correct Python program that matches the specification and passes all tests. Think step by step first, and write a Python solution between ```python and ```.
+
+  User Question:

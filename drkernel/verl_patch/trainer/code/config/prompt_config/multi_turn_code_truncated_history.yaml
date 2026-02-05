@@ -1,0 +1,17 @@
+method: system
+prompt: null
+
+per_turn_prompts:
+  - name: first_turn
+    condition: "current_turn == 0"
+    history_mode: all
+    skip_env: 0.0
+    response_truncation: python_code, answer_code
+    template: |
+      If you are confident about your solution, organize your reasoning and return the final solution inside an ```answer``` block.
+  - name: other_turn
+    condition: "current_turn > 0"
+    history_mode: initial+recent2
+    skip_env: 0.0
+    response_truncation: python_code, answer_code
+    template: null

@@ -1,0 +1,31 @@
+method: system
+prompt: null
+
+per_turn_prompts:
+  - name: first_code_generation
+    condition: "current_turn == 0"
+    history_mode: all
+    skip_env: 1.0
+    response_truncation: python_code, answer_code
+    template: null
+  - name: code_generation
+    condition: "current_turn % 2 == 0 and current_turn > 0 and current_turn < self.max_agent_turns - 1"
+    history_mode: all
+    skip_env: 1.0
+    response_truncation: python_code, answer_code
+    template: |
+      Based on the previous code execution results, update the solution inside a single ```python``` block without additional code or test cases. If you are ready to submit the solution, return the final solution inside an ```answer``` block.
+  - name: final_code_generation
+    condition: "current_turn == self.max_agent_turns - 1"
+    history_mode: all
+    skip_env: 1.0
+    response_truncation: python_code, answer_code
+    template: |
+      This is the final turn. Based on the previous code execution results, you need to submit the solution inside an ```answer``` block. Do not include any additional code or test cases.
+  - name: test_generation
+    condition: "current_turn % 2 == 1"
+    history_mode: all
+    skip_env: 0.0
+    response_truncation: python_code
+    template: |
+      Use thorough test cases inside a single ```python``` block that call the solution and print outputs of unsuccessful tests.

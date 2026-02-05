@@ -1,0 +1,300 @@
+# specify the default per-component configs
+defaults:
+
+  # <folder_name>@<field_name>.<field_name>: <yaml_file_name>
+  # actor_rollout_ref.actor: trainer/config/actor/megatron_actor.yaml
+  - actor@actor_rollout_ref.actor: megatron_actor
+  # data: trainer/config/data/legacy_data.yaml
+  - data@data: legacy_data
+  # load the reference default config, then apply the fields in the current yaml
+  # Reference model config.
+  # Reference model will be enabled when actor.use_kl_loss or/and algorithm.use_kl_in_reward is/are True.
+  - ref@actor_rollout_ref.ref: megatron_ref
+  # Rollout model config.
+  - rollout@actor_rollout_ref.rollout: rollout
+  # Critic model config.
+  - critic@critic: megatron_critic
+  # Reward model config.
+  - reward_model@reward_model: megatron_reward_model
+  - _self_
+
+actor_rollout_ref:
+  hybrid_engine: True
+
+  nccl_timeout: 600 # seconds, default is 10 minutes for torch, you can set it to a larger value if you have long-running operations like 32B or 72B model using megatron
+
+  model:
+
+    path: ~/models/deepseek-llm-7b-chat
+
+    custom_chat_template: null
+
+    external_lib: null
+
+    override_config:
+
+      model_config: {}
+
+      moe_config:
+
+        freeze_moe_router: False
+
+    use_fused_kernels: False # Whether to use custom fused kernels (PostProcessing, for memory efficiency)
+
+    trust_remote_code: False
+
+  env:
+    root_dir: null
+
+  rollout:
+    # may get higher throughput when set to True. When activated, Please increase max_num_batched_tokens or decrease max_model_len.
+    enable_chunked_prefill: False
+
+    load_format: dummy_megatron
+
+    tensor_model_parallel_size: 1
+
+    layer_name_map:
+      qkv_layer_name: qkv
+      gate_proj_layer_name: gate_up
+
+    # Whether to calculate log probabilities during rollout
+    calculate_log_probs: True
+
+    # Rollout enforcement and cache management
+    enforce_eager: False
+    free_cache_engine: True
+
+custom_reward_function:
+  path: null
+  name: compute_score
+
+algorithm:
+  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  _target_: verl_patch.trainer.code.config.AlgoConfig
+  gamma: 1.0
+  lam: 1.0
+  # Advantage estimator: "gae", "grpo", "reinforce_plus_plus", "rloo", "remax", "optimal_baseline", "optimal_baseline_step"
+  adv_estimator: gae
+  norm_adv_by_std_in_grpo: True
+  use_kl_in_reward: False
+  kl_penalty: kl  # how to estimate kl divergence
+  kl_ctrl:
+    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    _target_: verl_patch.trainer.code.config.KLControlConfig
+    type: fixed
+    kl_coef: 0.001
+    horizon: 10000
+    target_kl: 0.1
+  use_pf_ppo: False
+  pf_ppo:
+    reweight_method: pow  # ["pow", "max_min", "max_random"]
+    weight_pow: 2.0
+
+  # Filter groups configuration (used in DAPO and Entropy)
+  # Set enable: false to disable, or enable: true with metric and max_num_gen_batches
+  filter_groups:
+    enable: false
+    metric: null  # Options: "acc", "score", "seq_reward", "seq_final_reward", etc.
+    max_num_gen_batches: 0  # Non-positive values mean no upper limit
+
+  # Variance reduction techniques
+  batch_std: False               # Enable intelligent batch standardization
+  use_multi_prompt_mvu: False    # Multi-prompt Minimum Variance Unbiased weighting
+
+  # Advantage estimation configuration
+  adv_by_last_turn: True  # Only use the last turn's data for advantage calculation
+  use_final_reward: True  # Restrict reward assignment to the last turn (ignore intermediate rewards)
+
+  # Rollout Correction (replaces legacy tis_imp_ratio_cap)
+  rollout_is: null # "token", "turn", "sequence", or "null" (disabled)
+  rollout_is_kwargs: {'upper': 2.0} # upper: float
+  rollout_rs: null # "token", "turn", "turn_geo", "sequence", "geometric", or "null" (disabled)
+  rollout_rs_kwargs: {'lower': 0.5, 'upper': 2.0} # lower: float, upper: float
+  rollout_token_veto_threshold: null # float, per-token veto threshold (null = disabled)
+
+  # Rollout Correction Mode Selection (New)
+  # Skip old_log_prob recomputation by using rollout_log_prob directly
+  bypass_old_logprob_for_rollout: false
+
+  # Use pure policy gradient with IS correction instead of PPO clipping
+  # Requires bypass_old_logprob_for_rollout=true
+  # Higher variance but no clipping constraints
+  use_pure_rollout_correction: false
+
+  # Optimal baseline configuration
+  optimal_baseline_kwargs: {'uniform_weight':False, 'uniform_cumulative':False, 'rollout_correction':False}
+    # uniform_weight:          # True: Use w=1 instead of variance proxy (removes length bias)
+    # uniform_cumulative:      # True: Skip sum/cumsum of variance proxy (tests if weighting matters beyond length)
+    # rollout_correction:      # True: Enable rollout correction for score_norm
+
+trainer:
+  balance_batch: False
+  total_epochs: 30
+  total_training_steps: null
+  project_name: verl_examples
+  experiment_name: gsm8k
+  logger: ['console', 'wandb']
+  log_val_generations: 0
+  nnodes: 1
+  n_gpus_per_node: 8
+  save_freq: -1
+  esi_redundant_time: 0
+
+  # auto: find the last ckpt to resume. If can't find, start from scratch
+  resume_mode: auto # or disable or resume_path if resume_from_path is set
+  resume_from_path: null
+  del_local_ckpt_after_load: False
+  val_before_train: True
+  test_freq: -1
+  critic_warmup: 0
+  default_hdfs_dir: null
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+  max_actor_ckpt_to_keep: null
+  max_critic_ckpt_to_keep: null
+  # The timeout for ray worker group to wait for the register center to be ready
+  ray_wait_register_center_timeout: 300
+  device: cuda
+  # Directory for logging rollout data; no dump if null
+  rollout_data_dir: null
+
+  # Directory for logging validation data; no dump if null
+  validation_data_dir: null
+
+  # Whether to run validation only
+  val_only: False
+
+  # Whether it's a legacy worker implementation mode
+  use_legacy_worker_impl: auto
+
+  rejection_sample: True
+  remove_clip: False # remove overlong response if True
+
+  # Early stopping configuration
+  early_stopping:
+    # Validation-based early stopping
+    val_metric: null  # Metric to monitor for validation early stopping (e.g., "val_solve_rate")
+    val_patience: 0   # Number of epochs to wait before stopping (0 = disabled)
+    val_mode: max     # "max" for metrics to maximize, "min" for metrics to minimize
+
+    # Training-based early stopping
+    train_metric: null       # Metric to monitor for training early stopping (e.g., "train_solve_rate")
+    train_threshold: 0.3     # Threshold value that triggers early stopping
+    train_window: 10         # Window size for computing moving average
+    train_patience: 1        # Number of consecutive windows below threshold before stopping
+
+global_profiler:
+  _target_: verl.utils.profiler.ProfilerConfig
+  tool: null  # choose between nsys, npu, torch, torch_memory
+  steps: null   # profile steps
+  profile_continuous_steps: False
+  save_path: "outputs/profile"   # profiler saving path
+  # Specific tool configs, can use +profiler.tool_config.[tool].xxx to config
+  global_tool_config:
+
+    # nsys config
+    nsys:
+
+      # True for each task has its own database, False for all tasks in one training step share one database.
+      discrete: False
+
+      # controller Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      ## reference https://docs.nvidia.com/nsight-systems/UserGuide/index.html
+      ## reference https://docs.ray.io/en/latest/ray-observability/user-guides/profiling.html
+      controller_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+      # worker Nvidia Nsight Systems Options. Must set when profile_steps is not None.
+      worker_nsight_options:
+
+        # Select the API(s) to be traced.
+        trace: "cuda,nvtx,cublas,ucx"
+
+        # Track the GPU memory usage by CUDA kernels. Must be string type "true" or "false".
+        cuda-memory-usage: "true"
+
+        # CUDA graphs will be traced as a whole
+        cuda-graph-trace: "graph"
+
+        # Profiling only in a range of torch.cuda.profiler.start and stop. Do not change this config.
+        capture-range: "cudaProfilerApi"
+
+        # Specify the desired behavior when a capture range ends.
+        # In verl we need the torch.cuda.profiler.start/stop pair to repeats n times.
+        # valid values are "repeat-shutdown:n" or null.
+        # For normal whole step profiling, n = len(profile_steps);
+        # but for discrete profiling, n = len(profile_steps) * Number(subtasks).
+        # Or you can just leave it null and the program will use n = len(profile_steps) * 6;
+        capture-range-end: null
+
+        # Send signal to the target application's process group. We let the program to exit by itself.
+        kill: none
+
+    # enable memory visualization for debugging memory usage
+    torch_memory:
+      #  Maximum number of allocation entries to record
+      trace_alloc_max_entries: 100_000
+      # The depth of the call stack to capture for each allocation
+      stack_depth: 32
+      # 'alloc': records only allocation events || 'state': records memory state changes || 'all': records both.
+      context: "all"
+      # 'python': records Python stacks || 'cpp': records C++ stacks (available in some versions) || 'all': records both.
+      stacks: "all"
+      # devices, record_context etc.
+      kw_args: {}
+
+ray_kwargs:
+  ray_init:
+    num_cpus: null # `None` means using all CPUs, which might cause hang if limited in systems like SLURM. Please set to a number allowed then.
+  timeline_json_file: null
+
+# Two-Gate Rejection Filter Configuration
+# Addresses systematic inference-training mismatch between vLLM (BFloat16) and FSDP (FP32)
+# Based on "Rejection Sampling is All You Need for Systematic Inference-Training Mismatch"
+rejection_sampling:
+  enable_two_gate_filter: false  # Enable the two-gate filtering system (disabled by default)
+
+  # Gate 1: Systematic Bias Check
+  # Detects sequences with excessive accumulated bias from BFloat16 precision loss
+  gate1:
+    enabled: true
+    bias_epsilon: 0.01  # Maximum tolerable average log-prob difference per token (1% tolerance)
+                        # Lower values = stricter filtering (typical: 0.005-0.02)
+
+  # Gate 2: Logit-Difference Instability Check
+  # Detects tokens sampled from numerically unstable or statistically implausible distributions
+  # Threshold = max(hardware_limit, vocab_aware_threshold)
+  gate2:
+    enabled: true
+    instability_threshold: -15.0  # Default: max of hardware and vocab-aware thresholds
+
+    # Hardware limits (precision-based):
+    # - FP16: -9.7 (ln(2^-14), hardware underflow at 6.1e-5)
+    # - BFloat16: -87.3 (ln(2^-126), but mantissa limited to ~-20 practical)
+
+    # Vocab-aware thresholds (reject tokens k× below uniform):
+    # For k=100 (reject tokens 100× less likely than uniform):
+    # - 32k vocab: -15.0 (uniform at -10.4)
+    # - 50k vocab: -15.4 (uniform at -10.8)
+    # - 155k vocab (Qwen): -16.6 (uniform at -11.95)
+
+    # Recommended settings:
+    # - Use -15.0: Balanced (rejects ~100× below uniform for most vocabs)
+    # - Use -20.0: Very conservative (only extreme outliers)
+    # - Use max(-15.0, ln(1/(100*vocab_size))): Dynamic vocab-aware
+
+  # Logging and debugging options
+  log_rejected_samples: false  # Log details of rejected samples (verbose)
+  save_rejection_stats: true   # Track rejection statistics for monitoring
+
+  # Note: FP32 LM head is configured in actor_rollout_ref.rollout section above
+  # Expected rejection rate: 5-15% when enabled
+  # Metrics logged as filter/* (e.g., filter/acceptance_rate, filter/gate1_rejection_rate)

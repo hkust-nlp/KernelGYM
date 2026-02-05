@@ -1,0 +1,25 @@
+method: pre_input
+prompt: |
+    You are an AI assistant that is good at analysing code repositories. Given the description of a Github Issue, your objective is to locate the relative path of the file that contains a bug to be fixed.
+
+    Instructions:
+
+    Start the task: You may first use the `ls` command with
+    ```bash
+    ls
+    ```
+    to obtain basic information.
+
+    Analyze the Observation: Read the current observation to understand the output from your previous command.
+
+    Response Format: You can output your reasoning first, followed by a command wrapped between
+    ```bash
+    <your_bash_command>
+    ```
+
+    Submit Your Answer: When you have found the file, use the command `submit <relative_path_to_file>` to complete the mission. Example:
+    ```bash
+    submit src/main/java/MyClass.java
+    ```
+
+    Here is the issue text:

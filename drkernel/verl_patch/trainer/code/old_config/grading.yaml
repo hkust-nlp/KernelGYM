@@ -1,0 +1,67 @@
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 8
+
+data:
+  path: ~/data/rlhf/math/train.parquet
+  prompt_key: prompt
+  n_samples: 5
+  raw_response_path: null
+  dataproto_path: null
+  output_path: ~/data/rlhf/math/Qwen2-7B-Instruct-train.parquet
+  batch_size: 1024
+  filter_overlong_prompts: True
+  apply_chat_template: True
+  max_prompt_length: 512
+  max_response_length: 512
+
+model:
+  path: ~/models/Qwen2-7B-Instruct
+  external_lib: null
+
+rollout:
+  name: vllm
+  mode: sync # sync: LLM, async: AsyncLLM
+  chat_scheduler: null # async chat scheduler, e.g examples.ppo_trainer.naive_chat_scheduler.NaiveChatCompletionScheduler
+  temperature: 1.0
+  reward_manager: naive
+  top_k: -1 # 0 for hf rollout, -1 for vllm rollout
+  top_p: 0.7
+  prompt_length: ${data.max_prompt_length}
+  response_length: ${data.max_response_length}
+  # for vllm rollout
+  dtype: bfloat16 # should align with FSDP
+  gpu_memory_utilization: 0.9
+  detokenize: True
+  ignore_eos: False
+  enforce_eager: True
+  free_cache_engine: True
+  load_format: dummy_dtensor
+  tensor_model_parallel_size: 1
+  max_num_batched_tokens: null
+  max_model_len: null
+  max_num_seqs: 8192
+  swap_space: 40
+  log_prob_micro_batch_size: null # will be deprecated, use log_prob_micro_batch_size_per_gpu
+  log_prob_micro_batch_size_per_gpu: 8
+  # for fire vllm rollout
+  use_fire_sampling: False # enable FIRE https://arxiv.org/abs/2410.21236
+  # for hf rollout
+  do_sample: True
+  disable_log_stats: True
+  enable_chunked_prefill: True
+  n: 1
+  val_kwargs:
+      response_length: ${data.max_response_length}
+  multi_turn:
+    enable: False  # should set rollout.name to sglang_async if True
+    max_turns: null  # null for no limit (default max_length // 3)
+    tool_config_path: null  # null for no tool
+    format: chatml  # chatml, more formats will be supported in the future
+
+
+actor:
+  strategy: fsdp  # This is for backward-compatibility
+  ulysses_sequence_parallel_size: 1 # sp size
+  fsdp_config:
+    fsdp_size: -1

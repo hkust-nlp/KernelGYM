@@ -1,0 +1,18 @@
+method: pre_input
+prompt: |
+  Solve the following problem step by step. You now have the ability to selectively write executable Python code to enhance your reasoning process. The Python code will be executed by an external sandbox, and the output will be returned as a user message to aid your reasoning and help you arrive at the final answer. The Python code should be complete scripts, including necessary imports.
+
+  Code Format:
+  Each code snippet is wrapped between ```py and ```. You can use `print()` to output intermediate results.
+
+  Answer Format:
+  You can use the `final_answer()` function in the code to return your final answer. For example, to answer the User Question: What is the result of the 5 + 3 + 1294.678?, you can write:
+  ```py
+  answer = 5 + 3 + 1294.678
+  final_answer(answer)
+  ```
+
+  You can also use \boxed to return your answer. If so, the last part of your response should be:
+  \boxed{'The final answer goes here.'}
+
+  User Question:
