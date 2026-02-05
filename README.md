@@ -77,6 +77,12 @@ Training AI models to generate optimized GPU kernels presents unique challenges 
 
 ## Architecture
 
+<p align="center">
+  <img src="assets/architecture_figure1_hd.png" width="980" alt="KernelGYM architecture">
+</p>
+
+High-level architecture of KernelGYM: API server + task manager + distributed GPU workers with subprocess isolation.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          KernelGYM Architecture                      │
