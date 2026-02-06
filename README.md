@@ -2,7 +2,7 @@
 
 [![Dataset](https://img.shields.io/badge/🤗%20Dataset-yellow)](https://huggingface.co/collections/hkust-nlp/drkernel)
 [![Models](https://img.shields.io/badge/🤗%20Models-yellow)](https://huggingface.co/collections/hkust-nlp/drkernel)
-[![arXiv](https://img.shields.io/badge/arXiv-Coming_Soon-b31b1b?logo=arxiv&logoColor=white)]()
+[![arXiv](https://img.shields.io/badge/arXiv-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2602.05885)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white)](https://discord.gg/HsMvN4us)
 
 **KernelGYM** is a GPU-distributed environment designed for evaluating and training AI models on GPU kernel generation tasks. This repository also includes our validated RL training methods from our paper:
