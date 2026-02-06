@@ -688,7 +688,7 @@ If you use our resources in your research, please cite our paper:
 @article{liuetal2026,
   title={Dr.Kernel: Reinforcement Learning Done Right for Triton Kernel Generations},
   author={Wei Liu, Jiawei Xu, Yingru Li, Longtao Zheng, Tianjian Li, Qian Liu, Junxian He},
-  journal={Preprint},
+  journal={arXiv:2602.05885},
   year={2026}
 }
 ```
