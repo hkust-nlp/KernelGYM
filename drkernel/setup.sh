@@ -32,3 +32,5 @@ ABI_FLAG="${ABI_FLAG:-FALSE}"
 URL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abi${ABI_FLAG}-cp310-cp310-linux_x86_64.whl"
 wget -nv -P . "${URL}"
 pip install --no-cache-dir "./$(basename "${URL}")"
+
+pip install tenacity

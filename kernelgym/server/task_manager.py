@@ -368,19 +368,24 @@ class TaskManager:
 
     async def get_next_task(self, worker_id: str) -> Optional[Dict[str, Any]]:
         task_id = None
+
+        # 1) 先非阻塞检查 worker 专属队列
         for prefix in self._prefixes_for_read():
             worker_queue_key = f"{prefix}:queue:worker:{worker_id}"
             task_id = await self.redis.rpop(worker_queue_key)
             if task_id is not None:
                 break
 
-            for priority in (Priority.HIGH, Priority.NORMAL, Priority.LOW):
-                queue_key = f"{prefix}:queue:priority:{priority.value}"
-                task_id = await self.redis.rpop(queue_key)
-                if task_id is not None:
-                    break
-            if task_id is not None:
-                break
+        # 2) 用 BRPOP 阻塞等待公共优先级队列，避免轮询竞争，保证跨节点公平分发
+        if task_id is None:
+            brpop_keys = []
+            for prefix in self._prefixes_for_read():
+                for priority in (Priority.HIGH, Priority.NORMAL, Priority.LOW):
+                    brpop_keys.append(f"{prefix}:queue:priority:{priority.value}")
+            if brpop_keys:
+                result = await self.redis.brpop(brpop_keys, timeout=1)
+                if result is not None:
+                    _, task_id = result
 
         if task_id is None:
             return None

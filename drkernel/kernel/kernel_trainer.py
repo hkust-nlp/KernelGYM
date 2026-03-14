@@ -68,6 +68,7 @@ from kernel.metrics.kernel_multi_turn_metrics import compute_kernel_multi_turn_m
 from kernel.trainer.ppo.core_algos import shape_rewards
 from kernel.rewards.coverage_helper import compute_coverage_rejection_mask
 
+import time
 
 def compute_response_mask(data: DataProto):
     responses = data.batch["responses"]
@@ -1134,7 +1135,7 @@ def apply_kl_penalty(
     if "uid" in data.non_tensor_batch:
         # Count unique samples (original batch size) instead of total turns
         uids = data.non_tensor_batch["uid"]
-        unique_samples = torch.unique(uids).numel()
+        unique_samples = len(np.unique(uids))
         print(
             f"[DEBUG] KL using unique samples count: {unique_samples} instead of {batch_size}"
         )
