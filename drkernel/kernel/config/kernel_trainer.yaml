@@ -15,6 +15,7 @@ reward_model:
   reward_manager: kernel
   server_url: "http://[fdbd:dccd:cdd2:2001::19d]:10458"
   reward_func_name: "calculate_reward_weighted"
+  reference_backend: null
   init_correct_weight: 0.5
   init_performance_weight: 0.5
   speedup_eps: 0.01

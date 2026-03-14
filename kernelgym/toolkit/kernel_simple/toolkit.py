@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+import tempfile
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -55,29 +59,71 @@ def _normalize_cases(raw_cases: Any) -> List[Dict[str, Any]]:
     return [_normalize_case(case, idx) for idx, case in enumerate(raw_cases)]
 
 
-def _load_cases_from_code(code: str) -> Tuple[List[Dict[str, Any]], Any]:
-    context: Dict[str, Any] = {}
-    compile(code, "<string>", "exec")
-    exec(code, context)
-    get_cases = context.get("get_cases")
-    get_inputs = context.get("get_inputs")
-    get_init_inputs = context.get("get_init_inputs")
+def _exec_code_as_module(code: str) -> Tuple[Dict[str, Any], str]:
+    """Write code to a temp .py file and import it as a module.
 
-    init_inputs = get_init_inputs() if callable(get_init_inputs) else []
-    if callable(get_cases):
-        raw_cases = get_cases()
-        return _normalize_cases(raw_cases), init_inputs
-    if callable(get_inputs):
-        return _normalize_cases([{"inputs": get_inputs()}]), init_inputs
-    return [], init_inputs
+    This is required for @triton.jit (and similar JIT decorators) which
+    use inspect.getsourcefile() internally and refuse to work with code
+    compiled from a '<string>' source.
+
+    Returns (module_vars, tmp_path). The caller is responsible for deleting
+    tmp_path when it is no longer needed (i.e. after all JIT-compiled
+    functions have finished running).
+    """
+    with tempfile.NamedTemporaryFile(
+        suffix=".py", mode="w", delete=False, dir=tempfile.gettempdir()
+    ) as f:
+        f.write(code)
+        tmp_path = f.name
+
+    module_name = f"_kernelgym_tmp_{os.path.basename(tmp_path)[:-3]}"
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, tmp_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return vars(module), tmp_path
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def _load_cases_from_code(code: str) -> Tuple[List[Dict[str, Any]], Any]:
+    context, tmp_path = _exec_code_as_module(code)
+    try:
+        get_cases = context.get("get_cases")
+        get_inputs = context.get("get_inputs")
+        get_init_inputs = context.get("get_init_inputs")
+
+        init_inputs = get_init_inputs() if callable(get_init_inputs) else []
+        if callable(get_cases):
+            raw_cases = get_cases()
+            return _normalize_cases(raw_cases), init_inputs
+        if callable(get_inputs):
+            return _normalize_cases([{"inputs": get_inputs()}]), init_inputs
+        return [], init_inputs
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def _load_init_inputs_from_code(code: str) -> Any:
-    context: Dict[str, Any] = {}
-    compile(code, "<string>", "exec")
-    exec(code, context)
-    get_init_inputs = context.get("get_init_inputs")
-    return get_init_inputs() if callable(get_init_inputs) else []
+    context, tmp_path = _exec_code_as_module(code)
+    try:
+        get_init_inputs = context.get("get_init_inputs")
+        return get_init_inputs() if callable(get_init_inputs) else []
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def _run_model(model: Any, inputs: Any) -> Any:
@@ -254,8 +300,8 @@ class KernelSimpleToolkit(Toolkit):
                         inputs = _move_to_device(case.get("inputs"), device)
                         expected = _move_to_device(expected, device)
                         actual = _run_model(model, inputs)
-                        rtol = case.get("rtol", 1e-4)
-                        atol = case.get("atol", 1e-5)
+                        rtol = case.get("rtol") if case.get("rtol") is not None else 1e-4
+                        atol = case.get("atol") if case.get("atol") is not None else 1e-5
                         if not _compare_outputs(expected, actual, rtol, atol):
                             failed_cases.append(case.get("name", "unknown"))
                 correctness = len(failed_cases) == 0

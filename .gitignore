@@ -1,2 +1,9 @@
 data/
 .claude/
+__pycache__/
+*.pyc
+*.pyo
+logs/
+core.*
+*.md
+drkernel/outputs/*

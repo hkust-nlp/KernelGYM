@@ -311,9 +311,7 @@ class GPUWorker:
                 
                 if task_data:
                     await self._process_task(task_data)
-                else:
-                    # No tasks available. get_next_task 已 BRPOP(1s)，此处仅做极短休眠避免忙等
-                    await asyncio.sleep(0.1)
+                # get_next_task 使用 BRPOP(1s) 阻塞等待，无需额外 sleep
                     
             except Exception as e:
                 logger.error(f"Error in processing loop for worker {self.worker_id}: {e}")

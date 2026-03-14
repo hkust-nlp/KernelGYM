@@ -532,13 +532,10 @@ class SubprocessWorkerPool:
 
     async def _restart_worker(self, worker: PersistentWorker):
         """
-        重启一个 worker
+        重启一个 worker (非阻塞版本)
 
-        这个函数会：
-        1. 关闭旧的 worker 进程
-        2. 从 workers 列表中移除
-        3. 创建新的 worker
-        4. 添加到 idle pool
+        所有阻塞操作通过 run_in_executor 在线程中执行，
+        避免冻结共享的 asyncio 事件循环。
         """
         async with self.lock:
             logger.info(
@@ -546,9 +543,11 @@ class SubprocessWorkerPool:
                 f"(processed {worker.tasks_processed} tasks)"
             )
 
-            # 关闭旧 worker
+            loop = asyncio.get_event_loop()
+
+            # 关闭旧 worker (在线程中执行，避免阻塞事件循环)
             try:
-                worker.shutdown(timeout=5)
+                await loop.run_in_executor(None, worker.shutdown, 5)
             except Exception as e:
                 logger.error(f"[{worker.worker_id}] Error shutting down: {e}")
 
@@ -560,17 +559,19 @@ class SubprocessWorkerPool:
             if worker in self.busy_workers:
                 self.busy_workers.remove(worker)
 
-            # 等待一小段时间让GPU资源完全释放
-            # 在高负载情况下，立即重启可能导致CUDA初始化缓慢或超时
-            time.sleep(2.0)
+            # 等待GPU资源释放 (非阻塞)
+            await asyncio.sleep(2.0)
 
-            # 创建新 worker（保持相同的 ID）
+            # 创建新 worker (在线程中执行，因为 PersistentWorker.__init__ 会阻塞等待子进程初始化)
             try:
-                new_worker = PersistentWorker(
-                    worker.worker_id,
-                    self.device_id,
-                    f"(pool_size={self.pool_size}, max_tasks={self.max_tasks_per_worker}, restart)",
-                    max_tasks_per_worker=self.max_tasks_per_worker
+                new_worker = await loop.run_in_executor(
+                    None,
+                    lambda: PersistentWorker(
+                        worker.worker_id,
+                        self.device_id,
+                        f"(pool_size={self.pool_size}, max_tasks={self.max_tasks_per_worker}, restart)",
+                        max_tasks_per_worker=self.max_tasks_per_worker
+                    )
                 )
 
                 self.workers.append(new_worker)

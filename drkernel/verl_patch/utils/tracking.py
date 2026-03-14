@@ -78,12 +78,6 @@ class Tracking:
 
             import wandb
 
-            MERLIN_JOB_ID = os.environ.get("MERLIN_JOB_ID")
-            ARNOLD_MONITOR_TRIAL_ID = os.environ.get("ARNOLD_MONITOR_TRIAL_ID")
-            base_url = "https://ml.byteintl.net/development/instance/jobs/"
-            url = base_url + MERLIN_JOB_ID + "?tabState=run_info&trialId=" + ARNOLD_MONITOR_TRIAL_ID
-            config['merlin_job_url'] = url
-            config['git_commit_url'] = os.environ.get("GIT_COMMIT_URL")
             wandb_resume_id, resume_mode, fork_from = get_wandb_resume_info(default_local_dir)
             wandb.init(
                 project=project_name,
