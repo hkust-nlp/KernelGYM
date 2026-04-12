@@ -207,18 +207,27 @@ class StandaloneVLLMEngineManager:
         self.config = config
         self.tokenizer = tokenizer
         self.rollout_tp_size = self.config.rollout.tensor_model_parallel_size
-        if total_gpus < 1:
-            raise ValueError("standalone_vllm requires total_gpus >= 1")
-        if total_gpus % self.rollout_tp_size != 0:
-            raise ValueError(
-                f"standalone_vllm requires total_gpus ({total_gpus}) divisible by tensor_model_parallel_size "
-                f"({self.rollout_tp_size})"
-            )
-        self.rollout_dp_size = total_gpus // self.rollout_tp_size
-        self.world_size = self.rollout_dp_size * self.rollout_tp_size
 
         rollout_backend = self.config.rollout.get("backend", "vllm")
-        if rollout_backend in ("openai", "openai_sdk"):
+        self._uses_openai = rollout_backend in ("openai", "openai_sdk")
+
+        if self._uses_openai:
+            # OpenAI/API backends don't need local GPUs — run 1 worker on CPU only
+            if total_gpus < 0:
+                raise ValueError("total_gpus must be >= 0")
+            self.rollout_dp_size = max(1, total_gpus // self.rollout_tp_size) if total_gpus > 0 else 1
+        else:
+            if total_gpus < 1:
+                raise ValueError("standalone_vllm requires total_gpus >= 1")
+            if total_gpus % self.rollout_tp_size != 0:
+                raise ValueError(
+                    f"standalone_vllm requires total_gpus ({total_gpus}) divisible by tensor_model_parallel_size "
+                    f"({self.rollout_tp_size})"
+                )
+            self.rollout_dp_size = total_gpus // self.rollout_tp_size
+        self.world_size = self.rollout_dp_size * self.rollout_tp_size
+
+        if self._uses_openai:
             from kernel.workers.rollout.vllm_rollout.openai_async_engine_multi_iter import (
                 AsyncvLLMEngine as OpenAIAsyncEngine,
                 MultiIterAsyncvLLMEngine as OpenAIMultiIterEngine,
@@ -236,6 +245,9 @@ class StandaloneVLLMEngineManager:
             else self.config.rollout.prompt_length + self.config.rollout.response_length
         )
 
+        # OpenAI backends run on CPU only (no local GPU needed for API calls)
+        actor_num_gpus = 0 if self._uses_openai else self.rollout_tp_size
+
         user = os.environ.get("USER", "user")
         cache_root = f"/tmp/{user}"
         runtime_env = {
@@ -247,7 +259,7 @@ class StandaloneVLLMEngineManager:
         }
         self.async_llm_servers = [
             engine_class.options(
-                num_gpus=self.rollout_tp_size,
+                num_gpus=actor_num_gpus,
                 runtime_env=runtime_env,
                 name=f"standalone_async_llm_server_{rollout_dp_rank}",
             ).remote(

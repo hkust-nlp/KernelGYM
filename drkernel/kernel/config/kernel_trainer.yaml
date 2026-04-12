@@ -1,6 +1,6 @@
 hydra:
   searchpath:
-    - file://verl_patch/trainer/code/config
+    - file:///mnt/hstorage/GKG/framework/KernelGYM/drkernel/verl_patch/trainer/code/config
 
 defaults:
   - ppo_trainer
@@ -83,7 +83,7 @@ reward_model:
 
 # Custom reward function for kernel evaluation
 custom_reward_function:
-  path: kernel/rewards/kernel_reward.py
+  path: /mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/rewards/kernel_reward.py # kernel/rewards/kernel_reward.py
   name: compute_kernel_reward_batch
 
 # Actor rollout reference configuration
@@ -164,7 +164,7 @@ actor_rollout_ref:
       rollout_save_jsonl: null
 
       # Path to per-turn prompt config
-      prompt_config_path: kernel/config/prompt_config/multi_turn_kernel.yaml
+      prompt_config_path: /mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/config/prompt_config/multi_turn_kernel.yaml
 
       # Whether to mask loss for void turns (no tool calls) in multi-turn training
       mask_void_turn: True

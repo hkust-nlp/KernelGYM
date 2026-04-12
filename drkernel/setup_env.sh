@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${DRKERNEL_ROOT}/.." && pwd)"
 
 export DRKERNEL_ROOT
 export REPO_ROOT
-export PYTHONPATH="${DRKERNEL_ROOT}:${REPO_ROOT}:${PYTHONPATH:-}"
+export PYTHONPATH="${DRKERNEL_ROOT}:${DRKERNEL_ROOT}/verl:${REPO_ROOT}:${PYTHONPATH:-}"
 
 # Common runtime defaults
 export PROJECT_NAME="${PROJECT_NAME:-drkernel}"

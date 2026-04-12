@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     api_host: str = Field(default="0.0.0.0", env="API_HOST")
     api_port: int = Field(default=10907, env="API_PORT")
-    api_workers: int = Field(default=4, env="API_WORKERS")
+    api_workers: int = Field(default=1, env="API_WORKERS")
     api_reload: bool = Field(default=False, env="API_RELOAD")
 
     gpu_devices: List[int] = Field(default_factory=lambda: list(range(8)), env="GPU_DEVICES")

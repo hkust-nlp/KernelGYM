@@ -9,8 +9,8 @@ EXPERIMENT_NAME=${RUN_NAME}
 
 REFERENCE_BACKEND="torch_compile"
 
-HDFS_RUNS_PATH=""
-EVAL_DATASET="hkust-nlp/drkernel-validation-data"
+HDFS_RUNS_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/scripts/eval"
+EVAL_DATASET="/mnt/hstorage/GKG/datasets/structured_datasets/drkernel/drkernel-validation-data/validation_data_thinking.parquet"
 
 MULTI_TURN=True
 MAX_USER_TURNS=3
@@ -22,7 +22,7 @@ VISUALIZE_ONLY=False
 MAX_PROMPT_LENGTH=20480
 MAX_RESPONSE_LENGTH=8192
 
-OUTPUT_DIR="${HDFS_RUNS_PATH}/${RUN_NAME}/grading_results"
+OUTPUT_DIR="${HDFS_RUNS_PATH}/${RUN_NAME}/grading_results_claude_4.5"
 OUTPUT_PATH="${OUTPUT_DIR}/graded_results.parquet"
 METRICS_OUTPUT_PATH="${OUTPUT_DIR}/metrics.json"
 RAW_RESPONSE_PATH="${OUTPUT_DIR}/raw_responses.jsonl"
@@ -84,11 +84,11 @@ NUM_CORRECT_TRIALS=5
 SPEEDUP_REWARD_UPPER_BOUND=3.0
 
 # Custom Reward Function (optional)
-CUSTOM_REWARD_PATH="kernel/rewards/kernel_reward.py"
+CUSTOM_REWARD_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/rewards/kernel_reward.py"
 CUSTOM_REWARD_NAME="compute_kernel_reward_batch"
 
 NNODES=1
-N_GPUS_PER_NODE=8
+N_GPUS_PER_NODE=1
 
 FIX_QWEN3_CHAT_TEMPLATE=False
 

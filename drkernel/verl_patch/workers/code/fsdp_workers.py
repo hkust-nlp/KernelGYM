@@ -651,7 +651,9 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 fsdp_config = omega_conf_to_dataclass(self.config.actor.fsdp_config)
             else:
                 optim_config = None
-                fsdp_config = FSDPEngineConfig()
+                # Standalone rollout should follow rollout.dtype instead of the
+                # actor-training-oriented FSDP default model dtype.
+                fsdp_config = FSDPEngineConfig(model_dtype=self.config.rollout.get("dtype", "bfloat16"))
 
             local_path = copy_to_local(self.config.model.path, use_shm=use_shm)
             (

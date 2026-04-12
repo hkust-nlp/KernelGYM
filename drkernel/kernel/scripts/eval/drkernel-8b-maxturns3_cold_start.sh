@@ -7,8 +7,9 @@ source "$SCRIPT_DIR/grading_common.sh"
 
 FSDP_SIZE=-1
 PROJECT_NAME="kernel-grading"
-RUN_NAME="drkernel-14b-maxturns3"
+RUN_NAME="drkernel-8b-maxturns3"
 EXPERIMENT_NAME=${RUN_NAME}
+# KERNELGYM_SERVER_URL="http://192.168.31.68:8001"
 
 HDFS_RUNS_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/scripts/eval"
 EVAL_DATASET="/mnt/hstorage/GKG/datasets/structured_datasets/drkernel/drkernel-validation-data/validation_data_thinking.parquet"
@@ -28,7 +29,7 @@ OUTPUT_PATH="${OUTPUT_DIR}/graded_results.parquet"
 METRICS_OUTPUT_PATH="${OUTPUT_DIR}/metrics.json"
 RAW_RESPONSE_PATH="${OUTPUT_DIR}/raw_responses.jsonl"
 
-HF_MODEL_PATH="/mnt/hstorage/GKG/pretrained_models/drkernel-14b"
+HF_MODEL_PATH="/mnt/hstorage/GKG/pretrained_models/drkernel-8b-coldstart"
 MODEL_NAME="${HF_MODEL_PATH}"
 MODEL_PATH="${MODEL_NAME}"
     
@@ -41,7 +42,7 @@ DO_SAMPLE=True               # Enable sampling (False for greedy)
 
 # Rollout Mode
 ROLLOUT_MODE="async_vllm"  # or "standalone_vllm"
-ROLLOUT_GPU_MEMORY_UTIL=0.4
+ROLLOUT_GPU_MEMORY_UTIL=0.325
 ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE=1
 
 # Evaluation Metrics

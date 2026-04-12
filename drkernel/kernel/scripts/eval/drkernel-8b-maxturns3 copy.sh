@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/grading_common.sh"
 
 FSDP_SIZE=-1
 PROJECT_NAME="kernel-grading"
-RUN_NAME="drkernel-14b-maxturns3"
+RUN_NAME="drkernel-8b-maxturns3"
 EXPERIMENT_NAME=${RUN_NAME}
 
 HDFS_RUNS_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/scripts/eval"
@@ -28,12 +28,12 @@ OUTPUT_PATH="${OUTPUT_DIR}/graded_results.parquet"
 METRICS_OUTPUT_PATH="${OUTPUT_DIR}/metrics.json"
 RAW_RESPONSE_PATH="${OUTPUT_DIR}/raw_responses.jsonl"
 
-HF_MODEL_PATH="/mnt/hstorage/GKG/pretrained_models/drkernel-14b"
+HF_MODEL_PATH="/mnt/hstorage/GKG/pretrained_models/drkernel-8b"
 MODEL_NAME="${HF_MODEL_PATH}"
 MODEL_PATH="${MODEL_NAME}"
     
 # Generation Parameters
-N_SAMPLES=8                  # Generate 4 samples per prompt
+N_SAMPLES=4                  # Generate 4 samples per prompt
 BATCH_SIZE=64                 # The whole batch to rollout engine. And it will process data by itself.
 TEMPERATURE=1.0              # Sampling temperature
 TOP_P=0.95                   # Top-p (nucleus) sampling
@@ -41,7 +41,7 @@ DO_SAMPLE=True               # Enable sampling (False for greedy)
 
 # Rollout Mode
 ROLLOUT_MODE="async_vllm"  # or "standalone_vllm"
-ROLLOUT_GPU_MEMORY_UTIL=0.4
+ROLLOUT_GPU_MEMORY_UTIL=0.5 
 ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE=1
 
 # Evaluation Metrics

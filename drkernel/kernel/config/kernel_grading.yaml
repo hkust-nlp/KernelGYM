@@ -4,7 +4,7 @@
 
 hydra:
   searchpath:
-    - file://verl_patch/trainer/code/config
+    - file:///mnt/hstorage/GKG/framework/KernelGYM/drkernel/verl_patch/trainer/code/config
 
 defaults:
   - ppo_trainer
@@ -219,7 +219,7 @@ actor_rollout_ref:
       rollout_save_jsonl: null
 
       # Path to per-turn prompt config
-      prompt_config_path: kernel/config/prompt_config/multi_turn_kernel.yaml
+      prompt_config_path: /mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/config/prompt_config/multi_turn_kernel.yaml
 
       # Whether to mask loss for void turns (no tool calls) in multi-turn training
       mask_void_turn: True

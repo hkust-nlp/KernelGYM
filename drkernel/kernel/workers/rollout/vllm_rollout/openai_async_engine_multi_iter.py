@@ -371,8 +371,19 @@ def _resolve_openai_settings(config: DictConfig) -> dict[str, Any]:
         default=False,
     )
 
+    reasoning_effort = (
+        openai_cfg.get("reasoning_effort")
+        or os.getenv("OPENAI_REASONING_EFFORT")
+        or None
+    )
+    if reasoning_effort and reasoning_effort.lower() in ("none", "false", ""):
+        reasoning_effort = None
+
     extra_headers = openai_cfg.get("extra_headers") or {}
-    if not isinstance(extra_headers, dict):
+    from collections.abc import Mapping
+    if isinstance(extra_headers, Mapping) and not isinstance(extra_headers, dict):
+        extra_headers = dict(extra_headers)
+    elif not isinstance(extra_headers, dict):
         extra_headers = {}
     http_referer = os.getenv("OPENAI_HTTP_REFERER")
     if http_referer:
@@ -392,6 +403,7 @@ def _resolve_openai_settings(config: DictConfig) -> dict[str, Any]:
         "max_retries": max_retries,
         "max_concurrency": max_concurrency,
         "thinking_mode": thinking_mode,
+        "reasoning_effort": reasoning_effort,
         "extra_headers": extra_headers,
     }
 
@@ -689,6 +701,7 @@ class AsyncvLLMEngine:
         self.openai_model: str | None = None
         self._openai_semaphore: asyncio.Semaphore | None = None
         self.thinking_mode = False
+        self.reasoning_effort = None
         self.pad_token_id = self.tokenizer.pad_token_id
         
         self.ref_reward_fn = reward_fn
@@ -708,6 +721,7 @@ class AsyncvLLMEngine:
         self.openai_model = settings["model"]
         self._openai_semaphore = asyncio.Semaphore(settings["max_concurrency"])
         self.thinking_mode = settings["thinking_mode"]
+        self.reasoning_effort = settings.get("reasoning_effort")
         self.client = AsyncOpenAI(
             api_key=settings["api_key"],
             base_url=settings["base_url"],
@@ -740,26 +754,37 @@ class AsyncvLLMEngine:
         if self.client is None or self.openai_model is None:
             raise RuntimeError("OpenAI client is not initialized. Call init_engine first.")
 
+        # Reasoning models (e.g. GPT-5.4) require max_completion_tokens instead of max_tokens
+        use_reasoning = bool(self.reasoning_effort)
         payload: dict[str, Any] = {
             "model": self.openai_model,
             "messages": messages,
-            "max_tokens": max_tokens,
         }
+        if use_reasoning:
+            payload["max_completion_tokens"] = max_tokens
+            payload["reasoning_effort"] = self.reasoning_effort
+        else:
+            payload["max_tokens"] = max_tokens
         if sampling_params.get("temperature") is not None:
             payload["temperature"] = sampling_params.get("temperature")
-        if sampling_params.get("top_p") is not None:
-            payload["top_p"] = sampling_params.get("top_p")
-        if sampling_params.get("presence_penalty") is not None:
-            payload["presence_penalty"] = sampling_params.get("presence_penalty")
-        if sampling_params.get("frequency_penalty") is not None:
-            payload["frequency_penalty"] = sampling_params.get("frequency_penalty")
-        if sampling_params.get("seed") is not None:
-            payload["seed"] = sampling_params.get("seed")
+        # Reasoning models (e.g. GPT-5.4) reject top_p, presence_penalty,
+        # frequency_penalty, and seed — skip them when reasoning_effort is set.
+        if not use_reasoning:
+            if sampling_params.get("top_p") is not None:
+                payload["top_p"] = sampling_params.get("top_p")
+            if sampling_params.get("presence_penalty") is not None:
+                payload["presence_penalty"] = sampling_params.get("presence_penalty")
+            if sampling_params.get("frequency_penalty") is not None:
+                payload["frequency_penalty"] = sampling_params.get("frequency_penalty")
+            if sampling_params.get("seed") is not None:
+                payload["seed"] = sampling_params.get("seed")
         if sampling_params.get("stop") is not None:
             payload["stop"] = sampling_params.get("stop")
-        if sampling_params.get("logprobs"):
-            payload["logprobs"] = True
-            payload["top_logprobs"] = 1
+        # Reasoning models (e.g. GPT-5.4) also reject logprobs — skip it.
+        if not use_reasoning:
+            if sampling_params.get("logprobs"):
+                payload["logprobs"] = True
+                payload["top_logprobs"] = 1
         if timeout is not None:
             payload["timeout"] = timeout
 
@@ -1139,6 +1164,22 @@ class MultiTurnRequest(BaseModel):
         else:
             contain_error = False
 
+        # Guard against empty reward_scores (e.g., all API calls timed out)
+        if not reward_scores:
+            logging.warning("finalize() called with empty reward_scores — returning empty finalization")
+            self.stats.num_turns = 0
+            self.stats.contain_void_turn = 0
+            self.stats.finish_reason = finish_reason_type
+            return {
+                "messages": self.messages,
+                "response_token_ids": self.response_token_ids,
+                "response_turns": self.response_turns,
+                "reward_scores": [],
+                "finish_reason_type": finish_reason_type,
+                "loss_mask": [],
+                "stats": self.stats,
+            }
+
         is_meaningful_turn = [True]
         max_rewards = reward_scores[0]
         for turn_idx in range(1, len(reward_scores)):
@@ -1272,6 +1313,7 @@ class MultiIterAsyncvLLMEngine:
         self.openai_model: str | None = None
         self._openai_semaphore: asyncio.Semaphore | None = None
         self.thinking_mode = False
+        self.reasoning_effort = None
         self.pad_token_id = tokenizer.pad_token_id
 
         self.reward_fn = reward_fn
@@ -1562,6 +1604,7 @@ class MultiIterAsyncvLLMEngine:
         self.openai_model = settings["model"]
         self._openai_semaphore = asyncio.Semaphore(settings["max_concurrency"])
         self.thinking_mode = settings["thinking_mode"]
+        self.reasoning_effort = settings.get("reasoning_effort")
         self.client = AsyncOpenAI(
             api_key=settings["api_key"],
             base_url=settings["base_url"],
@@ -1602,26 +1645,37 @@ class MultiIterAsyncvLLMEngine:
         if self.client is None or self.openai_model is None:
             raise RuntimeError("OpenAI client is not initialized. Call init_engine first.")
 
+        # Reasoning models (e.g. GPT-5.4) require max_completion_tokens instead of max_tokens
+        use_reasoning = bool(self.reasoning_effort)
         payload: dict[str, Any] = {
             "model": self.openai_model,
             "messages": messages,
-            "max_tokens": max_tokens,
         }
+        if use_reasoning:
+            payload["max_completion_tokens"] = max_tokens
+            payload["reasoning_effort"] = self.reasoning_effort
+        else:
+            payload["max_tokens"] = max_tokens
         if sampling_params.get("temperature") is not None:
             payload["temperature"] = sampling_params.get("temperature")
-        if sampling_params.get("top_p") is not None:
-            payload["top_p"] = sampling_params.get("top_p")
-        if sampling_params.get("presence_penalty") is not None:
-            payload["presence_penalty"] = sampling_params.get("presence_penalty")
-        if sampling_params.get("frequency_penalty") is not None:
-            payload["frequency_penalty"] = sampling_params.get("frequency_penalty")
-        if sampling_params.get("seed") is not None:
-            payload["seed"] = sampling_params.get("seed")
+        # Reasoning models (e.g. GPT-5.4) reject top_p, presence_penalty,
+        # frequency_penalty, and seed — skip them when reasoning_effort is set.
+        if not use_reasoning:
+            if sampling_params.get("top_p") is not None:
+                payload["top_p"] = sampling_params.get("top_p")
+            if sampling_params.get("presence_penalty") is not None:
+                payload["presence_penalty"] = sampling_params.get("presence_penalty")
+            if sampling_params.get("frequency_penalty") is not None:
+                payload["frequency_penalty"] = sampling_params.get("frequency_penalty")
+            if sampling_params.get("seed") is not None:
+                payload["seed"] = sampling_params.get("seed")
         if sampling_params.get("stop") is not None:
             payload["stop"] = sampling_params.get("stop")
-        if sampling_params.get("logprobs"):
-            payload["logprobs"] = True
-            payload["top_logprobs"] = 1
+        # Reasoning models (e.g. GPT-5.4) also reject logprobs — skip it.
+        if not use_reasoning:
+            if sampling_params.get("logprobs"):
+                payload["logprobs"] = True
+                payload["top_logprobs"] = 1
         if timeout is not None:
             payload["timeout"] = timeout
 
@@ -1974,10 +2028,17 @@ class MultiIterAsyncvLLMEngine:
         messages = _normalize_messages(messages)
         try:
             if async_timeout is None:
-                completion = await self._openai_chat_completion(
-                    messages=messages,
-                    sampling_params=params,
-                    max_tokens=max_tokens,
+                # Fallback timeout: use 2x openai_timeout (or 1800s) to prevent hanging forever
+                fallback_timeout = max(getattr(self, 'openai_timeout', 900) * 2, 1800)
+                logging.info(f"Request {request_id}: async_timeout is None, using fallback timeout={fallback_timeout}s")
+                completion = await asyncio.wait_for(
+                    self._openai_chat_completion(
+                        messages=messages,
+                        sampling_params=params,
+                        max_tokens=max_tokens,
+                        timeout=fallback_timeout,
+                    ),
+                    timeout=fallback_timeout,
                 )
             else:
                 completion = await asyncio.wait_for(
@@ -1990,14 +2051,15 @@ class MultiIterAsyncvLLMEngine:
                     timeout=async_timeout,
                 )
         except asyncio.TimeoutError:
-            print(f"Request {request_id}: Timed out after {async_timeout} seconds. The task will be abandoned.")
+            effective_timeout = async_timeout if async_timeout is not None else fallback_timeout
+            print(f"Request {request_id}: Timed out after {effective_timeout} seconds. The task will be abandoned.")
             if self.logfire_logger:
                 self.logfire_logger.warning(
                     f"Request timeout (asyncio) | request_id: {request_id} | step {global_step}",
                     request_id=request_id,
                     global_step=global_step,
-                    timeout_seconds=async_timeout,
-                    total_timeout=total_timeout,
+                    timeout_seconds=effective_timeout,
+                    total_timeout=total_timeout if async_timeout is not None else effective_timeout,
                 )
             self.clear_request_tracking(request_id)
 
@@ -2006,7 +2068,7 @@ class MultiIterAsyncvLLMEngine:
                 # placeholder, will not be used in loss computation
                 None,
                 None,
-                async_timeout,
+                effective_timeout,
                 0.0,
                 True,
                 False,
@@ -2019,6 +2081,8 @@ class MultiIterAsyncvLLMEngine:
                 None,
             )
         except Exception as exc:
+            logging.error(f"[API ERROR] Request {request_id}: {type(exc).__name__}: {exc}")
+            import traceback; traceback.print_exc()
             self.clear_request_tracking(request_id)
             finish_reason = FinishReasonTypeEnum.ERROR
             return (
@@ -2047,6 +2111,17 @@ class MultiIterAsyncvLLMEngine:
         response_token_ids = self.tokenizer.encode(response, add_special_tokens=False)
         agent_end_time = asyncio.get_event_loop().time()
         agent_spend_time = agent_end_time - agent_start_time
+
+        # ===== DETAILED PER-TURN LOGGING: Model Response =====
+        print(f"\n{'='*80}")
+        print(f"[TURN LOG] Request={request_id[:8]}... | UUID={uuid} | Time={agent_spend_time:.1f}s | Tokens={len(response_token_ids)}")
+        print(f"[TURN LOG] Model Response (first 30 lines):")
+        response_lines = response.split('\n')
+        for i, line in enumerate(response_lines[:30]):
+            print(f"  {i+1:3d} | {line}")
+        if len(response_lines) > 30:
+            print(f"  ... ({len(response_lines) - 30} more lines)")
+        print(f"{'='*80}\n")
 
         # Update token rate history
         self._record_generation_stats(
@@ -2170,7 +2245,20 @@ class MultiIterAsyncvLLMEngine:
         current_turn_count = req.get_num_turns() + 1
         env_done = current_turn_count >= self.max_agent_turns
 
-        print(f"Env Result: {env_result}")
+        # ===== DETAILED PER-TURN LOGGING: Eval Results =====
+        compiled = env_state.get("compiled", "N/A")
+        correct = env_state.get("correctness", "N/A")
+        perf = env_state.get("performance", "N/A")
+        decoy = env_state.get("decoy_kernel", "N/A")
+        print(f"\n{'='*80}")
+        print(f"[EVAL LOG] Request={request_id[:8]}... | UUID={uuid} | Turn={current_turn_count}/{self.max_agent_turns}")
+        print(f"[EVAL LOG] compiled={compiled} | correctness={correct} | performance={perf} | decoy={decoy}")
+        print(f"[EVAL LOG] reward={turn_reward:.4f} | env_time={env_spend_time:.1f}s | done={env_done}")
+        # Print compact eval extra info
+        if tool_info:
+            compact_info = {k: v for k, v in tool_info.items() if k not in ("tool_response",)}
+            print(f"[EVAL LOG] extra_info keys: {list(compact_info.keys())}")
+        print(f"{'='*80}\n")
 
 
         return (
@@ -2218,6 +2306,10 @@ class MultiIterAsyncvLLMEngine:
 
         # Run turns until done or max_agent_turns reached
         while not done and req.get_num_turns() - len(req.preserved_turn_indices) < self.max_agent_turns:
+            current_turn = req.get_num_turns() - len(req.preserved_turn_indices) + 1
+            print(f"\n{'#'*80}")
+            print(f"[ITERATION] iter={req.iteration_idx} | turn={current_turn}/{self.max_agent_turns} | uuid={uuid} | request={request_id[:8]}...")
+            print(f"{'#'*80}")
             turn_result = await self._process_single_turn(
                 deepcopy(req),
                 request_id,
@@ -2300,6 +2392,17 @@ class MultiIterAsyncvLLMEngine:
 
             done = turn_done
 
+        # ===== ITERATION SUMMARY =====
+        print(f"\n{'*'*80}")
+        print(f"[ITER SUMMARY] iter={req.iteration_idx} | uuid={uuid} | turns_completed={len(turn_rewards)}")
+        print(f"[ITER SUMMARY] rewards={turn_rewards}")
+        print(f"[ITER SUMMARY] correctness={turn_correctness}")
+        print(f"[ITER SUMMARY] speedups={turn_speedups}")
+        best_reward = max(turn_rewards) if turn_rewards else 0.0
+        any_correct = any(turn_correctness) if turn_correctness else False
+        print(f"[ITER SUMMARY] best_reward={best_reward:.4f} | any_correct={any_correct}")
+        print(f"{'*'*80}\n")
+
         return IterationState(
             iteration_idx=req.iteration_idx,
             turn_rewards=turn_rewards,
@@ -2362,6 +2465,30 @@ class MultiIterAsyncvLLMEngine:
         """Flatten multi-iteration accumulator into a single MultiTurnOutput."""
 
         sorted_turn_indices = accumulator.get_sorted_turns()
+
+        # Guard: if no turns were accumulated (e.g., all API calls timed out),
+        # return an empty MultiTurnOutput instead of crashing.
+        if not sorted_turn_indices:
+            logging.warning("_flatten_multi_iteration_output: accumulator is empty (no successful turns). Returning empty output.")
+            empty_stats = MultiTurnStats(
+                num_turns=0,
+                contain_void_turn=0,
+                finish_reason=FinishReasonTypeEnum.ASYNC_TIMEOUT.value,
+                cache_hits=0,
+                cache_misses=0,
+            )
+            return MultiTurnOutput(
+                multi_prompt_ids=[],
+                multi_response_ids=[],
+                multi_logprobs=[],
+                multi_loss_mask=[],
+                multi_rewards=[],
+                stats=empty_stats,
+                request_id=request_id,
+                messages=accumulator.final_messages,
+                multi_reward_extra_info=[],
+                multi_global_turn_indices=[],
+            )
 
         # Extract data in sorted order
         multi_prompt_ids = [accumulator.all_turn_prompts[i] for i in sorted_turn_indices]
@@ -2450,6 +2577,9 @@ class MultiIterAsyncvLLMEngine:
 
         # Run iterations
         for iter_idx in range(self.max_iterations):
+            print(f"\n{'@'*80}")
+            print(f"[MULTI-ITER] Starting iteration {iter_idx+1}/{self.max_iterations} | uuid={uuid} | request={request_id[:8]}...")
+            print(f"{'@'*80}")
             logging.info(f"Starting iteration {iter_idx}/{self.max_iterations}")
 
             # Run single iteration

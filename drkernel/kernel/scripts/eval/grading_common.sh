@@ -39,7 +39,7 @@ VISUALIZE_ONLY=${VISUALIZE_ONLY:-False}
 MULTI_TURN=${MULTI_TURN:-False}
 MAX_USER_TURNS=${MAX_USER_TURNS:-3}
 
-REFERENCE_BACKEND=${REFERENCE_BACKEND:-"pytorch"}
+REFERENCE_BACKEND=${REFERENCE_BACKEND:-"torch_compile"}
 
 # Model Configuration
 MODEL_NAME=${MODEL_NAME:-"Qwen3-8B-Base"}
@@ -81,6 +81,7 @@ OPENAI_BASE_URL=${OPENAI_BASE_URL:-""}
 OPENAI_TIMEOUT=${OPENAI_TIMEOUT:-120}
 OPENAI_MAX_RETRIES=${OPENAI_MAX_RETRIES:-3}
 OPENAI_MAX_CONCURRENCY=${OPENAI_MAX_CONCURRENCY:-64}
+OPENAI_EXTRA_HEADERS=${OPENAI_EXTRA_HEADERS:-"{}"}
 
 # Reward Manager Configuration
 REWARD_MANAGER=${REWARD_MANAGER:-"kernel_async"}
@@ -112,7 +113,7 @@ REWARD_PENALTY_CORRECTNESS=${REWARD_PENALTY_CORRECTNESS:--0.3}
 REWARD_PENALTY_PERF_DEGRADE=${REWARD_PENALTY_PERF_DEGRADE:--0.1}
 
 # Custom Reward Function
-CUSTOM_REWARD_PATH=${CUSTOM_REWARD_PATH:-"kernel/rewards/kernel_reward.py"}
+CUSTOM_REWARD_PATH=${CUSTOM_REWARD_PATH:-"/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/rewards/kernel_reward.py"}
 CUSTOM_REWARD_NAME=${CUSTOM_REWARD_NAME:-"compute_kernel_reward_batch"}
 
 MAX_NUM_BATCHED_TOKENS=$(expr $MAX_PROMPT_LENGTH + $MAX_RESPONSE_LENGTH + 1000)
@@ -432,6 +433,7 @@ run_grading() {
       actor_rollout_ref.rollout.openai.timeout=$OPENAI_TIMEOUT \
       actor_rollout_ref.rollout.openai.max_retries=$OPENAI_MAX_RETRIES \
       actor_rollout_ref.rollout.openai.max_concurrency=$OPENAI_MAX_CONCURRENCY \
+      +actor_rollout_ref.rollout.openai.extra_headers="$OPENAI_EXTRA_HEADERS" \
       reward_model.reward_manager=$REWARD_MANAGER \
       reward_model.reference_backend=$REFERENCE_BACKEND \
       reward_model.server_url='"'$REWARD_SERVER_URL'"' \

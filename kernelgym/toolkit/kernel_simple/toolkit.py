@@ -29,12 +29,14 @@ def _normalize_case(case: Any, idx: int) -> Dict[str, Any]:
     if isinstance(case, dict):
         inputs = case.get("inputs", case.get("input"))
         outputs = case.get("outputs", case.get("output"))
+        rtol = case.get("rtol")
+        atol = case.get("atol")
         return {
             "name": case.get("name", f"case_{idx}"),
             "inputs": inputs,
             "outputs": outputs,
-            "rtol": case.get("rtol"),
-            "atol": case.get("atol"),
+            "rtol": 1e-5 if rtol is None else rtol,
+            "atol": 1e-5 if atol is None else atol,
         }
     return {
         "name": f"case_{idx}",

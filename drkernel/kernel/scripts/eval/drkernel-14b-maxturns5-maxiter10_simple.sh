@@ -1,20 +1,33 @@
 #!/bin/bash
-
+unset https_proxy all_proxy no_proxy HTTPS_PROXY ALL_PROXY NO_PROXY
 
 # Source the common grading script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/grading_common.sh"
 
+# =============================================================================
+# Task-Specific Configuration
+# =============================================================================
+
+# Project and experiment naming
 FSDP_SIZE=-1
 PROJECT_NAME="kernel-grading"
-RUN_NAME="drkernel-14b-maxturns3"
+RUN_NAME="drkernel-14b-maxturns5-maxiter10_simple"
 EXPERIMENT_NAME=${RUN_NAME}
 
+# HDFS_RUNS_PATH=""
+# EVAL_DATASET="hkust-nlp/drkernel-validation-data"
 HDFS_RUNS_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/scripts/eval"
-EVAL_DATASET="/mnt/hstorage/GKG/datasets/structured_datasets/drkernel/drkernel-validation-data/validation_data_thinking.parquet"
+EVAL_DATASET="/mnt/hstorage/GKG/datasets/structured_datasets/drkernel/drkernel-validation-data/validation_data_thinking_10.parquet"
 
 MULTI_TURN=True
-MAX_USER_TURNS=3
+MAX_USER_TURNS=5
+
+MULTI_ITERATION=True
+MAX_ITERATIONS=10
+REMAIN_TURNS=4
+ITERATION_METHOD="best"
+BEST_SELECTION_METRIC="reward"
 
 GRADIO_VISUALIZATION=True
 GRADIO_SHARE=True
@@ -27,20 +40,22 @@ OUTPUT_DIR="${HDFS_RUNS_PATH}/${RUN_NAME}/grading_results"
 OUTPUT_PATH="${OUTPUT_DIR}/graded_results.parquet"
 METRICS_OUTPUT_PATH="${OUTPUT_DIR}/metrics.json"
 RAW_RESPONSE_PATH="${OUTPUT_DIR}/raw_responses.jsonl"
-
 HF_MODEL_PATH="/mnt/hstorage/GKG/pretrained_models/drkernel-14b"
 MODEL_NAME="${HF_MODEL_PATH}"
 MODEL_PATH="${MODEL_NAME}"
-    
+
+
+
 # Generation Parameters
 N_SAMPLES=8                  # Generate 4 samples per prompt
-BATCH_SIZE=64                 # The whole batch to rollout engine. And it will process data by itself.
+BATCH_SIZE=256                 # The whole batch to rollout engine. And it will process data by itself.
 TEMPERATURE=1.0              # Sampling temperature
 TOP_P=0.95                   # Top-p (nucleus) sampling
 DO_SAMPLE=True               # Enable sampling (False for greedy)
 
 # Rollout Mode
-ROLLOUT_MODE="async_vllm"  # or "standalone_vllm"
+# Options: "sync" (default), "async_vllm", "async_agent"
+ROLLOUT_MODE="async_vllm"
 ROLLOUT_GPU_MEMORY_UTIL=0.4
 ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE=1
 
@@ -48,7 +63,12 @@ ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE=1
 SOLVE_THRESHOLD=0.99         # Score >= 0.99 considered as "solved"
 PASS_AT_K=1                  # Compute pass@1 metric
 
-REWARD_SERVER_URL="${REWARD_SERVER_URL:-${KERNELGYM_SERVER_URL:-""}}"    # set directly or via env
+# Kernel Server Configuration
+# IMPORTANT: Set your kernel server URL
+# You can use environment variable KERNELGYM_SERVER_URL or set it here
+
+# REWARD_SERVER_URL="${REWARD_SERVER_URL:-${KERNELGYM_SERVER_URL:-""}}"    # set directly or via env
+REWARD_SERVER_URL="${REWARD_SERVER_URL:-${KERNELGYM_SERVER_URL:-"http://192.168.31.68:8001"}}"
 
 
 # Reward Manager
@@ -87,6 +107,10 @@ N_GPUS_PER_NODE=${ARNOLD_WORKER_GPU:-1}
 
 # Qwen3 chat template fix (if needed)
 FIX_QWEN3_CHAT_TEMPLATE=False
+
+# =============================================================================
+# Export Configuration for grading_common.sh
+# =============================================================================
 
 export PROJECT_NAME
 export RUN_NAME

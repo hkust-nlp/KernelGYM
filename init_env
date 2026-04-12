@@ -1,0 +1,5 @@
+conda init
+conda activate base
+
+conda deactivate
+source .venv/bin/activate

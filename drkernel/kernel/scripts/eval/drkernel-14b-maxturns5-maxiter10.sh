@@ -1,4 +1,5 @@
 #!/bin/bash
+export KERNELGYM_SERVER_URL="http://192.168.31.68:8001"
 
 # Source the common grading script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,8 +15,10 @@ PROJECT_NAME="kernel-grading"
 RUN_NAME="drkernel-14b-maxturns5-maxiter10"
 EXPERIMENT_NAME=${RUN_NAME}
 
-HDFS_RUNS_PATH=""
-EVAL_DATASET="hkust-nlp/drkernel-validation-data"
+# HDFS_RUNS_PATH=""
+# EVAL_DATASET="hkust-nlp/drkernel-validation-data"
+HDFS_RUNS_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/scripts/eval"
+EVAL_DATASET="/mnt/hstorage/GKG/datasets/structured_datasets/drkernel/drkernel-validation-data/validation_data_thinking_10.parquet"
 
 MULTI_TURN=True
 MAX_USER_TURNS=5
@@ -37,7 +40,7 @@ OUTPUT_DIR="${HDFS_RUNS_PATH}/${RUN_NAME}/grading_results"
 OUTPUT_PATH="${OUTPUT_DIR}/graded_results.parquet"
 METRICS_OUTPUT_PATH="${OUTPUT_DIR}/metrics.json"
 RAW_RESPONSE_PATH="${OUTPUT_DIR}/raw_responses.jsonl"
-HF_MODEL_PATH="hkust-nlp/drkernel-14b"
+HF_MODEL_PATH="/mnt/hstorage/GKG/pretrained_models/drkernel-14b"
 MODEL_NAME="${HF_MODEL_PATH}"
 MODEL_PATH="${MODEL_NAME}"
 
@@ -45,7 +48,7 @@ MODEL_PATH="${MODEL_NAME}"
 
 # Generation Parameters
 N_SAMPLES=8                  # Generate 4 samples per prompt
-BATCH_SIZE=128                 # The whole batch to rollout engine. And it will process data by itself.
+BATCH_SIZE=64                 # The whole batch to rollout engine. And it will process data by itself.
 TEMPERATURE=1.0              # Sampling temperature
 TOP_P=0.95                   # Top-p (nucleus) sampling
 DO_SAMPLE=True               # Enable sampling (False for greedy)
@@ -53,7 +56,7 @@ DO_SAMPLE=True               # Enable sampling (False for greedy)
 # Rollout Mode
 # Options: "sync" (default), "async_vllm", "async_agent"
 ROLLOUT_MODE="async_vllm"
-ROLLOUT_GPU_MEMORY_UTIL=0.5
+ROLLOUT_GPU_MEMORY_UTIL=0.4
 ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE=1
 
 # Evaluation Metrics
@@ -88,17 +91,18 @@ REWARD_PRINT_STATUS=True
 NUM_PERF_TRIALS=10
 NUM_CORRECT_TRIALS=5
 SPEEDUP_REWARD_UPPER_BOUND=3.0
+RAY_SCHEDULER_EVENTS=0
 
 # Custom Reward Function (optional)
-CUSTOM_REWARD_PATH="kernel/rewards/kernel_reward.py"
+CUSTOM_REWARD_PATH="/mnt/hstorage/GKG/framework/KernelGYM/drkernel/kernel/rewards/kernel_reward.py"
 CUSTOM_REWARD_NAME="compute_kernel_reward_batch"
 
 # System Configuration
 # Will use environment variables if available
 # NNODES=${ARNOLD_WORKER_NUM:-1}
 NNODES=1
-# N_GPUS_PER_NODE=${ARNOLD_WORKER_GPU:-1}
-N_GPUS_PER_NODE=8
+N_GPUS_PER_NODE=${ARNOLD_WORKER_GPU:-1}
+# N_GPUS_PER_NODE=8
 
 # Qwen3 chat template fix (if needed)
 FIX_QWEN3_CHAT_TEMPLATE=False
@@ -148,6 +152,7 @@ export REWARD_PRINT_STATUS
 export NUM_PERF_TRIALS
 export NUM_CORRECT_TRIALS
 export SPEEDUP_REWARD_UPPER_BOUND
+export RAY_SCHEDULER_EVENTS
 
 export CUSTOM_REWARD_PATH
 export CUSTOM_REWARD_NAME
